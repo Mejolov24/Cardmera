@@ -206,7 +206,7 @@ void button_release(){
   M5Cardputer.Speaker.tone(CAMERA_RELEASE,100);
 }
 
-
+// TODO: make ticker start and stop during disconects, and make it faster for a cooler effect.
 void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
