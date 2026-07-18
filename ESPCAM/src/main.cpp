@@ -2,14 +2,15 @@
 #include <esp_camera.h>
 #define FLASH_GPIO_NUM 4
 
-camera_config_t current_config;
+camera_config_t current_config = {};
 
 enum modetype{
   FLASH,
   PX_FORMAT,
   FR_SIZE,
   FB_SIZE,
-  APPLY_CAM
+  APPLY_CAM,
+  REQUEST_FRAME
 };
 
 enum readState{
@@ -21,6 +22,7 @@ enum readState{
 readState read_buffer = HEADER;
 modetype mode_buffer;
 uint8_t value_buffer;
+bool frame_requested = false;
 
 void set_flash(bool value){
   digitalWrite(FLASH_GPIO_NUM,value);
@@ -50,6 +52,10 @@ void modeSet(modetype mode,uint8_t value = 0){
     esp_camera_init(&current_config);
     break;
   
+    case REQUEST_FRAME:
+    frame_requested = true;
+    break;
+
   default:
     break;
   }
@@ -96,25 +102,29 @@ current_config.pin_d0 = 5;
   current_config.xclk_freq_hz = 20000000;
   current_config.ledc_channel = LEDC_CHANNEL_0;
   current_config.ledc_timer = LEDC_TIMER_0;
+  current_config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  current_config.fb_location = CAMERA_FB_IN_PSRAM;
   modeSet(PX_FORMAT, PIXFORMAT_RGB565);
   modeSet(FR_SIZE, FRAMESIZE_QQVGA);
-  modeSet(FB_SIZE, 2);
+  modeSet(FB_SIZE, 1);
   modeSet(APPLY_CAM);
+  
 }
 
 void setup() {
-Serial.begin(115200);
+Serial.begin(2000000);
 pinMode(FLASH_GPIO_NUM, OUTPUT);
 initialModeSet();
+
 }
 
 void loop() {
-camera_fb_t *fb = esp_camera_fb_get();
-  if (fb) {
-    // Send a simple header so Cardputer knows a frame starts
-    Serial.write(0xAA); 
+  while (Serial.available()){handleModesetSerial(Serial.read());}
+  if (frame_requested){
+    frame_requested = false;
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (not fb) return;
     Serial.write(fb->buf, fb->len);
     esp_camera_fb_return(fb);
   }
-  while (Serial.available()){handleModesetSerial(Serial.read());}
 }

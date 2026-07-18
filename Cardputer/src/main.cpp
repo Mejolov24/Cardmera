@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <M5Cardputer.h>
+#include <M5CADVKeyCB.h>
+M5CADVKeyCB keyHandler;
+
 
 enum PixFormat{
     PIXFORMAT_RGB565,    // 2BPP/RGB565
@@ -41,19 +44,51 @@ enum FrameSize{
     FRAMESIZE_INVALID
 };
 
+enum modetype{
+  FLASH,
+  PX_FORMAT,
+  FR_SIZE,
+  FB_SIZE,
+  APPLY_CAM,
+  REQUEST_FRAME
+};
+
+void modeSetSend(modetype mode,uint8_t value = 0){
+Serial2.write(0xFF);
+Serial2.write(mode);
+Serial2.write(value);
+}
+
+void OnKey(uint8_t key, bool pressed){
+    Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+    if(!pressed) return;
+    switch (key)
+        {
+        case 54: // left
+        modeSetSend(FLASH,false);
+        break;
+
+        case 56:// right
+        modeSetSend(FLASH,true);
+        break;
+
+        default:
+            break;
+}
+}
+
 void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
-  Serial2.begin(115200,SERIAL_8N1,13,15);
+  M5.Display.fillScreen(BLACK);
+  Serial2.begin(2000000,SERIAL_8N1,13,15);
+  keyHandler.SetupKeyboardCallback(OnKey);
 
 }
 
 void loop() {
-  Serial.print("hi");
-if (Serial2.available()){
-
-  M5Cardputer.Display.drawString(String(Serial2.read()),0,0);
-}
+  M5Cardputer.update();
+  keyHandler.KeyboardUpdate();
 }
 
 // put function definitions here:
