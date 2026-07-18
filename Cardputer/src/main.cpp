@@ -44,6 +44,13 @@ enum FrameSize{
     FRAMESIZE_INVALID
 };
 
+enum ReceiveState {
+  WAIT_SYNC_1,
+  WAIT_SYNC_2,
+  READ_LENGTH,
+  READ_PAYLOAD
+};
+
 enum modetype{
   FLASH,
   PX_FORMAT,
@@ -53,13 +60,15 @@ enum modetype{
   REQUEST_FRAME
 };
 
-// --- NEW BUFFERING VARIABLES ---
+ReceiveState rx_state = WAIT_SYNC_1;
 bool is_receiving = false;
+uint32_t jpeg_length = 0;
 uint32_t frame_bytes_read = 0;
+
 const int IMG_WIDTH = 160;
 const int IMG_HEIGHT = 120;
-const int IMG_SIZE = IMG_WIDTH * IMG_HEIGHT * 2; // 38,400 bytes
-uint8_t image_buffer[IMG_SIZE];
+const int MAX_IMG_SIZE = 38400; // Buffer big enough for largest possible QQVGA JPEG
+uint8_t image_buffer[MAX_IMG_SIZE];
 
 void modeSetSend(modetype mode,uint8_t value = 0){
 Serial2.write(0xFF);
@@ -94,9 +103,9 @@ void setup() {
   Serial2.setRxBufferSize(40000);
   Serial2.begin(2000000,SERIAL_8N1,13,15);
   keyHandler.SetupKeyboardCallback(OnKey);
-  modeSetSend(REQUEST_FRAME);
+modeSetSend(REQUEST_FRAME);
   is_receiving = true;
-  frame_bytes_read = 0;
+  rx_state = WAIT_SYNC_1;
 }
 
 void loop() {
@@ -104,34 +113,49 @@ void loop() {
   keyHandler.KeyboardUpdate();
 
   if (is_receiving) {
-    int available_bytes = Serial2.available();
-    if (available_bytes > 0) {
-      // Read chunks of data as they arrive
-      int bytes_to_read = min(available_bytes, (int)(IMG_SIZE - frame_bytes_read));
-      Serial2.readBytes(&image_buffer[frame_bytes_read], bytes_to_read);
-      frame_bytes_read += bytes_to_read;
+    while (Serial2.available() > 0) {
+      if (rx_state == WAIT_SYNC_1) {
+        if (Serial2.read() == 0xAA) rx_state = WAIT_SYNC_2;
+        
+      } else if (rx_state == WAIT_SYNC_2) {
+        if (Serial2.read() == 0xBB) rx_state = READ_LENGTH;
+        else rx_state = WAIT_SYNC_1;
+        
+      } else if (rx_state == READ_LENGTH) {
+        if (Serial2.available() >= 4) {
+          Serial2.readBytes((uint8_t*)&jpeg_length, 4);
+          
+          // Safety check: Is the reported length physically possible?
+          if (jpeg_length > MAX_IMG_SIZE || jpeg_length == 0) {
+            rx_state = WAIT_SYNC_1; // Corrupted header, restart
+          } else {
+            rx_state = READ_PAYLOAD;
+            frame_bytes_read = 0;
+          }
+        } else {
+          break; // Wait for the rest of the 4 length bytes
+        }
+        
+      } else if (rx_state == READ_PAYLOAD) {
+        int bytes_available = Serial2.available();
+        int bytes_to_read = min(bytes_available, (int)(jpeg_length - frame_bytes_read));
+        Serial2.readBytes(&image_buffer[frame_bytes_read], bytes_to_read);
+        frame_bytes_read += bytes_to_read;
 
-      // Once we have a full 160x120 frame
-      if (frame_bytes_read >= IMG_SIZE) {
-        is_receiving = false;
-        Serial.println("Frame complete. Rendering...");
+        // If we have received the full JPEG
+        if (frame_bytes_read >= jpeg_length) {
+          int x = (M5.Display.width() - IMG_WIDTH) / 2;
+          int y = (M5.Display.height() - IMG_HEIGHT) / 2;
 
-        // Center the 160x120 image on the 240x135 screen
-        int x = (M5.Display.width() - IMG_WIDTH) / 2;
-        int y = (M5.Display.height() - IMG_HEIGHT) / 2;
+          // Hardware decode and draw the JPEG
+          M5.Display.drawJpg(image_buffer, jpeg_length, x, y);
 
-        // The ESP32-CAM outputs RGB565 with a swapped byte order relative to M5GFX 
-        M5.Display.setSwapBytes(false); 
-        M5.Display.pushImage(x, y, IMG_WIDTH, IMG_HEIGHT, (uint16_t*)image_buffer);
-        modeSetSend(REQUEST_FRAME);
-        is_receiving = true;
-        frame_bytes_read = 0;
+          // Reset state machine and request the next frame immediately
+          rx_state = WAIT_SYNC_1;
+          modeSetSend(REQUEST_FRAME);
+          break; // Break the while loop to allow M5 buttons to update
+        }
       }
     }
-  } else {
-    // Flush out any garbage bytes when not explicitly waiting for a frame
-    while (Serial2.available()) Serial2.read();
-
   }
-
 }

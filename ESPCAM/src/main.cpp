@@ -106,7 +106,8 @@ current_config.pin_d0 = 5;
   current_config.ledc_timer = LEDC_TIMER_0;
   current_config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   current_config.fb_location = CAMERA_FB_IN_PSRAM;
-  modeSet(PX_FORMAT, PIXFORMAT_RGB565);
+  current_config.jpeg_quality = 12; 
+  modeSet(PX_FORMAT, PIXFORMAT_JPEG); 
   modeSet(FR_SIZE, FRAMESIZE_QQVGA);
   modeSet(FB_SIZE, 1);
   modeSet(APPLY_CAM);
@@ -126,7 +127,11 @@ void loop() {
     frame_requested = false;
     camera_fb_t *fb = esp_camera_fb_get();
     if (not fb) return;
-    Serial.write(fb->buf, fb->len);
+    Serial.write(0xAA); // Sync byte 1
+    Serial.write(0xBB); // Sync byte 2
+    Serial.write((uint8_t*)&fb->len, 4); // 4-byte length of the JPEG
+    Serial.write(fb->buf, fb->len);      // The actual JPEG data
+    
     esp_camera_fb_return(fb);
   }
 }
