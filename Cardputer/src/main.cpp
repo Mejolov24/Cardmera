@@ -53,6 +53,14 @@ enum modetype{
   REQUEST_FRAME
 };
 
+// --- NEW BUFFERING VARIABLES ---
+bool is_receiving = false;
+uint32_t frame_bytes_read = 0;
+const int IMG_WIDTH = 160;
+const int IMG_HEIGHT = 120;
+const int IMG_SIZE = IMG_WIDTH * IMG_HEIGHT * 2; // 38,400 bytes
+uint8_t image_buffer[IMG_SIZE];
+
 void modeSetSend(modetype mode,uint8_t value = 0){
 Serial2.write(0xFF);
 Serial2.write(mode);
@@ -70,6 +78,7 @@ void OnKey(uint8_t key, bool pressed){
 
         case 56:// right
         modeSetSend(FLASH,true);
+
         break;
 
         default:
@@ -81,17 +90,48 @@ void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
   M5.Display.fillScreen(BLACK);
+  Serial.begin(9600);
+  Serial2.setRxBufferSize(40000);
   Serial2.begin(2000000,SERIAL_8N1,13,15);
   keyHandler.SetupKeyboardCallback(OnKey);
-
+  modeSetSend(REQUEST_FRAME);
+  is_receiving = true;
+  frame_bytes_read = 0;
 }
 
 void loop() {
   M5Cardputer.update();
   keyHandler.KeyboardUpdate();
-}
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+  if (is_receiving) {
+    int available_bytes = Serial2.available();
+    if (available_bytes > 0) {
+      // Read chunks of data as they arrive
+      int bytes_to_read = min(available_bytes, (int)(IMG_SIZE - frame_bytes_read));
+      Serial2.readBytes(&image_buffer[frame_bytes_read], bytes_to_read);
+      frame_bytes_read += bytes_to_read;
+
+      // Once we have a full 160x120 frame
+      if (frame_bytes_read >= IMG_SIZE) {
+        is_receiving = false;
+        Serial.println("Frame complete. Rendering...");
+
+        // Center the 160x120 image on the 240x135 screen
+        int x = (M5.Display.width() - IMG_WIDTH) / 2;
+        int y = (M5.Display.height() - IMG_HEIGHT) / 2;
+
+        // The ESP32-CAM outputs RGB565 with a swapped byte order relative to M5GFX 
+        M5.Display.setSwapBytes(false); 
+        M5.Display.pushImage(x, y, IMG_WIDTH, IMG_HEIGHT, (uint16_t*)image_buffer);
+        modeSetSend(REQUEST_FRAME);
+        is_receiving = true;
+        frame_bytes_read = 0;
+      }
+    }
+  } else {
+    // Flush out any garbage bytes when not explicitly waiting for a frame
+    while (Serial2.available()) Serial2.read();
+
+  }
+
 }

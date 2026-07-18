@@ -24,6 +24,8 @@ modetype mode_buffer;
 uint8_t value_buffer;
 bool frame_requested = false;
 
+
+
 void set_flash(bool value){
   digitalWrite(FLASH_GPIO_NUM,value);
 }
