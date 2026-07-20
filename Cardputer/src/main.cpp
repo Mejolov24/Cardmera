@@ -139,7 +139,7 @@ void render(){
 
 void apply_modeset(){
 // discard old camera data
-while (Serial2.available()) {Serial2.read();}
+//while (Serial2.available()) {Serial2.read();}
 modeSetSend(FR_SIZE,current_settings->FR_SIZE);
 modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
 modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
@@ -208,6 +208,41 @@ is_receiving = true;
 rx_state = WAIT_SYNC_1;
 }
 
+void invert_rgb(int x, int y, int w, int h) {
+  uint16_t* pixels = (uint16_t*)canvas.getBuffer();
+
+  for (int yy = y; yy < y + h; yy++) {
+    for (int xx = x; xx < x + w; xx++) {
+
+      int i = yy * canvas.width() + xx;
+
+      uint16_t p = pixels[i];
+
+      // RGB565 extraction
+      uint16_t r = (p >> 11) & 0x1F;
+      uint16_t g = (p >> 5)  & 0x3F;
+      uint16_t b = p & 0x1F;
+
+      // swap red and blue
+      pixels[i] = (b << 11) | (g << 5) | r;
+    }
+  }
+}
+void invert_endians(int x, int y, int w, int h) {
+  uint16_t* pixels = (uint16_t*)canvas.getBuffer();
+
+  for (int yy = y; yy < y + h; yy++) {
+    for (int xx = x; xx < x + w; xx++) {
+
+      int i = yy * canvas.width() + xx;
+
+      uint16_t p = pixels[i];
+
+      // swap the two bytes
+      pixels[i] = (p >> 8) | (p << 8);
+    }
+  }
+}
 void CameraTick(){
   if (!is_receiving or at_menu) return;
   if (pending_modeset and !at_menu) apply_modeset(); pending_modeset = false;
@@ -243,7 +278,8 @@ void CameraTick(){
         int x = (canvas.width() - (r.w * scale)) / 2;
         int y = (canvas.height() - (r.h * scale)) / 2;
         canvas.drawJpg(video_buffer, jpeg_length, x, y,0,0,0, scale,scale);
-
+        if (global_settings.invert_rgb) invert_rgb(x, y, r.w * scale, r.h * scale);
+        if (global_settings.invert_endians) invert_endians(x, y, r.w * scale, r.h * scale);
         // Reset state machine and request the next frame
         rx_state = WAIT_SYNC_1;
         modeSetSend(REQUEST_FRAME);
@@ -251,7 +287,6 @@ void CameraTick(){
         break;
       }
     }
-    
   }
 }
 

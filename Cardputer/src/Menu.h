@@ -66,7 +66,7 @@ struct GlobalCameraSettings {
     bool AWB_GAIN = true;
     bool EXP_CTRL = true;
     int8_t AE_LEVEL = 0;
-    uint8_t AEC_VALUE = static_cast<int8_t>(aec_map[3]);
+    uint8_t AEC_VALUE = static_cast<int8_t>(aec_map[2]);
     bool AEC2 = false;
     bool GAIN_CTRL = true;
     int8_t GAIN_CEILING = 0;
@@ -74,12 +74,26 @@ struct GlobalCameraSettings {
     bool MIRROR = false;
     bool FLIP = false;
     int8_t SPECIAL = 0;
+
+    bool invert_rgb = false;
+    bool invert_endians = false;
 };
 GlobalCameraSettings global_settings = {};
 localCameraSettings viewfinder_settings = {};
 localCameraSettings photo_settings = {};
 localCameraSettings recording_settings = {};
 
+M5Menu::MenuItem circuit_bending_items[] = {
+    {
+        "Invert RGB",
+        &global_settings.invert_rgb
+    },
+    {
+        "Invert Endians",
+        &global_settings.invert_endians
+    }
+};
+M5Menu::Menu circuit_bending_menu(5,circuit_bending_items);
 M5Menu::MenuItem global_settings_items[] = {
     {"Brightness", &global_settings.BRIGHTNESS, 1, -2, 2},
     {"Contrast", &global_settings.CONTRAST, 1, -2, 2},
@@ -97,7 +111,8 @@ M5Menu::MenuItem global_settings_items[] = {
     {"Lens Correction", &global_settings.LENS_CORR},
     {"Mirror Image", &global_settings.MIRROR},
     {"Flip Image", &global_settings.FLIP},
-    {"Color Effect", &global_settings.SPECIAL, 1, 0, 6}
+    {"Color Effect", &global_settings.SPECIAL, 1, 0, 6},
+    {"Circuit Bending",&circuit_bending_menu}
 };
 M5Menu::Menu global_menu_settings(4,global_settings_items);
 
