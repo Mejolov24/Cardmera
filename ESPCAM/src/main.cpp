@@ -88,7 +88,7 @@ void modeSet(modetype mode,int8_t value = 0){
   }
 }
 
-void handleModesetSerial(int8_t data){
+void handleModesetSerial(uint8_t data){
   switch (read_buffer)
   {
   case HEADER:
@@ -100,7 +100,7 @@ void handleModesetSerial(int8_t data){
     read_buffer = VALUE;
     break;
   case VALUE:
-    value_buffer = data;
+    value_buffer = static_cast<int8_t>(data);
     read_buffer = HEADER;
     modeSet(mode_buffer,value_buffer);
     break;
@@ -147,7 +147,7 @@ initialModeSet();
 }
 
 void loop() {
-  while (Serial.available()){handleModesetSerial(static_cast<uint8_t>(Serial.read()));}
+  while (Serial.available()){handleModesetSerial(Serial.read());}
   if (frame_requested){
     frame_requested = false;
     camera_fb_t *fb = esp_camera_fb_get();
