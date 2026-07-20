@@ -6,11 +6,8 @@ camera_config_t current_config = {};
 
 enum modetype{
   FLASH,
-  PX_FORMAT,
   FR_SIZE,
-  FB_SIZE,
   JPEG_QUALITY,
-  // setting above this need re-init (APPLY_CAM)
   BRIGHTNESS,
   CONTRAST,
   SATURATION,
@@ -28,7 +25,6 @@ enum modetype{
   MIRROR,
   FLIP,
   SPECIAL,
-  APPLY_CAM,
   REQUEST_FRAME
 };
 
@@ -54,10 +50,8 @@ void modeSet(modetype mode,int8_t value = 0){
   switch (mode)
   {
   case FLASH: set_flash(value); break;
-  case PX_FORMAT: current_config.pixel_format = (pixformat_t)value; break;
-  case FR_SIZE: current_config.frame_size = (framesize_t)value; break;
-  case FB_SIZE: current_config.fb_count = value; break;
-  case JPEG_QUALITY: current_config.jpeg_quality = value; s->set_quality(s,value); break;
+  case FR_SIZE: s->set_framesize(s,(framesize_t)value); break;
+  case JPEG_QUALITY: s->set_quality(s,value); break;
   case BRIGHTNESS: s->set_brightness(s,value); break;
   case CONTRAST: s->set_contrast(s,value); break;
   case SATURATION: s->set_saturation(s,value); break;
@@ -76,14 +70,9 @@ void modeSet(modetype mode,int8_t value = 0){
   case FLIP: s->set_vflip(s,value); break;
   case SPECIAL: s->set_special_effect(s,value); break;
 
-  case APPLY_CAM:
-    esp_camera_deinit();
-    esp_camera_init(&current_config);
-    break;
-  
-    case REQUEST_FRAME:
-    frame_requested = true;
-    break;
+  case REQUEST_FRAME:
+  frame_requested = true;
+  break;
 
   default:
     break;
@@ -134,18 +123,17 @@ current_config.pin_d0 = 5;
   current_config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   current_config.fb_location = CAMERA_FB_IN_PSRAM;
   current_config.jpeg_quality = 12; 
-  modeSet(PX_FORMAT, PIXFORMAT_JPEG); 
-  modeSet(FR_SIZE, FRAMESIZE_QQVGA);
-  modeSet(FB_SIZE, 1);
-  modeSet(APPLY_CAM);
-  
+  current_config.pixel_format = PIXFORMAT_JPEG;
+  current_config.frame_size = FRAMESIZE_QXGA; // Allocate max size in ram
+  current_config.fb_count = 1;
+  esp_camera_init(&current_config);
+  modeSet(FR_SIZE,FRAMESIZE_QQVGA); // step down size
 }
 
 void setup() {
 Serial.begin(2000000);
 pinMode(FLASH_GPIO_NUM, OUTPUT);
 initialModeSet();
-
 }
 
 void loop() {

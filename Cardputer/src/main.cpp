@@ -49,11 +49,8 @@ enum ReceiveState {
 
 enum modetype{
   FLASH,
-  PX_FORMAT,
   FR_SIZE,
-  FB_SIZE,
   JPEG_QUALITY,
-  // setting above this need re-init (APPLY_CAM)
   BRIGHTNESS,
   CONTRAST,
   SATURATION,
@@ -71,7 +68,6 @@ enum modetype{
   MIRROR,
   FLIP,
   SPECIAL,
-  APPLY_CAM,
   REQUEST_FRAME
 };
 
@@ -82,8 +78,6 @@ bool is_receiving = false;
 uint32_t jpeg_length = 0;
 uint32_t frame_bytes_read = 0;
 
-#define IMG_WIDTH 160
-#define IMG_HEIGHT 120
 #define MAX_IMG_SIZE 81920
 uint8_t video_buffer[MAX_IMG_SIZE];
 
@@ -92,6 +86,10 @@ const unsigned long FRAME_TIMEOUT = 500;
 bool video_starved = false;
 
 bool at_menu = false;
+bool pending_modeset = false;
+bool holding_shutter = false;
+localCameraSettings* current_settings = &viewfinder_settings;
+
 #define BEEP_1 1318.51
 #define BEEP_2 1046.50
 #define CAMERA_PRESS 1567.98
@@ -115,28 +113,58 @@ uint32_t fast_noise() {
 }
 
 void renderStatic() {
-  int x_offset = (M5.Display.width() - IMG_WIDTH) / 2;
-  int y_offset = (M5.Display.height() - IMG_HEIGHT) / 2;
+  Resolution r = frameSizes[current_settings->FR_SIZE];
+  float scale = min((float)canvas.width() / r.w, (float)canvas.height() / r.h);
+  int x_offset = (canvas.width() - (r.w * scale)) / 2;
+  int y_offset = (canvas.height() - (r.h * scale)) / 2;
+  int targetW = (int)(r.w * scale);
+  int targetH = (int)(r.h * scale);
   uint16_t* buffer = (uint16_t*)video_buffer;
-  for (int y = 0; y < IMG_HEIGHT; y += 2){
-    for (int x = 0; x < IMG_WIDTH; x += 2){
+  for (int y = 0; y < targetH; y += 2){
+    for (int x = 0; x < targetW; x += 2){
       uint16_t color = (fast_noise() & 0x1) ? 0xFFFF : 0x0000;
-      buffer[y * IMG_WIDTH + x] = color;
-      buffer[y * IMG_WIDTH + x + 1] = color;
-      buffer[(y + 1) * IMG_WIDTH + x] = color;
-      buffer[(y + 1) * IMG_WIDTH + x + 1] = color;
+      buffer[y * targetW + x] = color;
+      buffer[y * targetW + x + 1] = color;
+      buffer[(y + 1) * targetW + x] = color;
+      buffer[(y + 1) * targetW + x + 1] = color;
     }
   }
-  canvas.pushImage(x_offset, y_offset, IMG_WIDTH, IMG_HEIGHT, buffer);
+  canvas.pushImage(x_offset, y_offset, targetW, targetH, buffer);
 }
-
-void OnUsage(M5Menu::MenuItem* item, M5Menu::Menu* menu){
-    // used for updating values
-    }
 
 void render(){
   canvas.pushSprite(0,0);
+  canvas.clear();
 }
+
+void apply_modeset(){
+// discard old camera data
+while (Serial2.available()) {Serial2.read();}
+modeSetSend(FR_SIZE,current_settings->FR_SIZE);
+modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
+modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
+modeSetSend(CONTRAST,global_settings.CONTRAST);
+modeSetSend(CONTRAST,global_settings.CONTRAST);
+modeSetSend(SHARPNESS,global_settings.SHARPNESS);
+modeSetSend(WB,global_settings.WB);
+modeSetSend(WB_MODE,global_settings.WB_MODE);
+modeSetSend(AWB_GAIN,global_settings.AWB_GAIN);
+modeSetSend(EXP_CTRL,global_settings.EXP_CTRL);
+modeSetSend(AE_LEVEL,global_settings.AE_LEVEL);
+modeSetSend(AEC_VALUE,static_cast<int8_t>(aec_map[global_settings.AEC_VALUE]));
+modeSetSend(AEC2,global_settings.AEC2);
+modeSetSend(GAIN_CTRL,global_settings.GAIN_CTRL);
+modeSetSend(GAIN_CEILING,global_settings.GAIN_CEILING);
+modeSetSend(LENS_CORR,global_settings.LENS_CORR);
+modeSetSend(MIRROR,global_settings.MIRROR);
+modeSetSend(FLIP,global_settings.FLIP);
+modeSetSend(SPECIAL,global_settings.SPECIAL);
+}
+
+
+void OnUsage(M5Menu::MenuItem* item, M5Menu::Menu* menu){
+    if (menu->id == 1 or menu->id == 4){pending_modeset = true;}
+    }
 
 void OnKey(uint8_t key, bool pressed){
   Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
@@ -174,45 +202,6 @@ void OnKey(uint8_t key, bool pressed){
   }
 }
 
-
-void reinit_camera(){
-  modeSetSend(APPLY_CAM);
-  delay(500);
-  apply_modeset();
-}
-
-void apply_modeset(){
-modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
-modeSetSend(CONTRAST,global_settings.CONTRAST);
-modeSetSend(CONTRAST,global_settings.CONTRAST);
-modeSetSend(SHARPNESS,global_settings.SHARPNESS);
-modeSetSend(WB,global_settings.WB);
-modeSetSend(WB_MODE,global_settings.WB_MODE);
-modeSetSend(AWB_GAIN,global_settings.AWB_GAIN);
-modeSetSend(EXP_CTRL,global_settings.EXP_CTRL);
-modeSetSend(AE_LEVEL,global_settings.AE_LEVEL);
-modeSetSend(AEC_VALUE,static_cast<int8_t>(aec_map[global_settings.AEC_VALUE]));
-modeSetSend(AEC2,global_settings.AEC2);
-modeSetSend(GAIN_CTRL,global_settings.GAIN_CTRL);
-modeSetSend(GAIN_CEILING,global_settings.GAIN_CEILING);
-modeSetSend(LENS_CORR,global_settings.LENS_CORR);
-modeSetSend(MIRROR,global_settings.MIRROR);
-modeSetSend(FLIP,global_settings.FLIP);
-modeSetSend(SPECIAL,global_settings.SPECIAL);
-}
-
-void apply_viewfinder_settings(){
-  modeSetSend(FR_SIZE,viewfinder_settings.FR_SIZE);
-  modeSetSend(JPEG_QUALITY,viewfinder_settings.JPEG_QUALITY);
-  reinit_camera();
-}
-
-void apply_photo_settings(){
-}
-
-void apply_recording_settings(){
-}
-
 void RequestFrame(){
 modeSetSend(REQUEST_FRAME);
 is_receiving = true;
@@ -221,6 +210,7 @@ rx_state = WAIT_SYNC_1;
 
 void CameraTick(){
   if (!is_receiving or at_menu) return;
+  if (pending_modeset and !at_menu) apply_modeset(); pending_modeset = false;
   while (Serial2.available() > 0) {
     if (rx_state == WAIT_SYNC_1) {if (Serial2.read() == 0xAA) rx_state = WAIT_SYNC_2;}
       else if (rx_state == WAIT_SYNC_2) {
@@ -248,11 +238,10 @@ void CameraTick(){
       lastFrameTime = millis();
       // If we have received the full JPEG
       if (frame_bytes_read >= jpeg_length) {
-        Resolution r = frameSizes[viewfinder_settings.FR_SIZE];
+        Resolution r = frameSizes[current_settings->FR_SIZE];
         float scale = min((float)canvas.width() / r.w, (float)canvas.height() / r.h);
         int x = (canvas.width() - (r.w * scale)) / 2;
         int y = (canvas.height() - (r.h * scale)) / 2;
-
         canvas.drawJpg(video_buffer, jpeg_length, x, y,0,0,0, scale,scale);
 
         // Reset state machine and request the next frame
@@ -271,12 +260,14 @@ void camera_poll(){
     renderStatic();
     RequestFrame();
     if (!video_starved){
+      canvas.clear();
       canvas.setFont(NO_SIGNAL_FONT);
       canvas.setTextDatum(middle_center);
       canvas.setTextColor(ORANGE,BLACK);
     }
     canvas.drawString("No video",M5.Display.width()/2,M5.Display.height()/2);
     video_starved = true;
+    pending_modeset = true;
     if (at_menu) return;
     render();
   }
@@ -289,18 +280,24 @@ void take_photo(){
 
 void button_press(){
   M5Cardputer.Speaker.tone(CAMERA_PRESS,100);
+  current_settings = &photo_settings;
+  apply_modeset();
+  holding_shutter = true;
 }
 void button_release(){
   M5Cardputer.Speaker.tone(CAMERA_RELEASE,100);
+  current_settings = &viewfinder_settings;
+  apply_modeset();
+  holding_shutter = false;
 }
 
 // TODO: make ticker start and stop during disconects, and make it faster for a cooler effect.
 void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
+  canvas.setBaseColor(BLACK);
   M5Cardputer.Display.setFont(UI_FONT);
   canvas.createSprite(240, 135);
-  canvas.setBaseColor(TFT_TRANSPARENT);
   Serial.begin(9600);
   Serial2.setRxBufferSize(40000);
   Serial2.begin(2000000,SERIAL_8N1,13,15);
@@ -317,6 +314,7 @@ void setup() {
   M5Cardputer.Speaker.tone(BEEP_1,100);
   delay(100);
   M5Cardputer.Speaker.tone(BEEP_2,100);
+  apply_modeset();
   RequestFrame();
 }
 

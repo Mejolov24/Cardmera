@@ -36,11 +36,6 @@ String resolutions[] = {
 "2560x1920",
 };
 
-extern void apply_viewfinder_settings();
-extern void apply_photo_settings();
-extern void apply_recording_settings();
-extern void apply_modeset();
-
 M5Menu::MenuTheme theme{
 .background_color = 0x211a,
 .border_color = 0x2c9f,
@@ -56,7 +51,7 @@ M5Menu::MenuTheme theme{
 
 struct localCameraSettings{
   uint8_t PX_FORMAT;
-  uint8_t FR_SIZE;
+  uint8_t FR_SIZE = 2;
   uint8_t FB_SIZE;
   uint8_t JPEG_QUALITY = 6; //0 to 63
 };
@@ -81,12 +76,11 @@ struct GlobalCameraSettings {
     int8_t SPECIAL = 0;
 };
 GlobalCameraSettings global_settings = {};
-localCameraSettings viewfinder_settings = {1};
+localCameraSettings viewfinder_settings = {};
 localCameraSettings photo_settings = {};
 localCameraSettings recording_settings = {};
 
 M5Menu::MenuItem global_settings_items[] = {
-    {"Apply Settings", apply_modeset},
     {"Brightness", &global_settings.BRIGHTNESS, 1, -2, 2},
     {"Contrast", &global_settings.CONTRAST, 1, -2, 2},
     {"Saturation", &global_settings.SATURATION, 1, -2, 2},
@@ -110,10 +104,6 @@ M5Menu::Menu global_menu_settings(4,global_settings_items);
 
 M5Menu::MenuItem recording_settings_items[] = {
     {
-        "Apply Settings",
-        apply_recording_settings
-    },
-    {
         "Resolution",
         &recording_settings.FR_SIZE,
         resolutions
@@ -132,10 +122,6 @@ M5Menu::Menu recording_menu_settings(3,recording_settings_items);
 
 M5Menu::MenuItem photo_settings_items[] = {
     {
-        "Apply Settings",
-        apply_photo_settings
-    },
-    {
         "Resolution",
         &photo_settings.FR_SIZE,
         resolutions
@@ -153,10 +139,6 @@ M5Menu::Menu photo_menu_settings(2,photo_settings_items);
 
 
 M5Menu::MenuItem viewfinder_settings_items[] = {
-    {
-        "Apply Settings",
-        apply_viewfinder_settings
-    },
     {
         "Resolution",
         &viewfinder_settings.FR_SIZE,
