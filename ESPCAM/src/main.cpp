@@ -9,6 +9,24 @@ enum modetype{
   PX_FORMAT,
   FR_SIZE,
   FB_SIZE,
+  JPEG_QUALITY,
+  // setting above this need re-init (APPLY_CAM)
+  BRIGHTNESS,
+  CONTRAST,
+  SATURATION,
+  SHARPNESS,
+  WB,
+  WB_MODE,
+  AWB_GAIN,
+  EXP_CTRL,
+  AE_LEVEL,
+  AEC2,
+  GAIN_CTRL,
+  GAIN_CEILING,
+  LENS_CORR,
+  MIRROR,
+  FLIP,
+  SPECIAL,
   APPLY_CAM,
   REQUEST_FRAME
 };
@@ -21,7 +39,7 @@ enum readState{
 
 readState read_buffer = HEADER;
 modetype mode_buffer;
-uint8_t value_buffer;
+int8_t value_buffer;
 bool frame_requested = false;
 
 
@@ -30,24 +48,31 @@ void set_flash(bool value){
   digitalWrite(FLASH_GPIO_NUM,value);
 }
 
-void modeSet(modetype mode,uint8_t value = 0){
+void modeSet(modetype mode,int8_t value = 0){
+  sensor_t *s = esp_camera_sensor_get();
   switch (mode)
   {
-  case FLASH:
-    set_flash(value);
-    break;
-
-  case PX_FORMAT:
-    current_config.pixel_format = (pixformat_t)value;
-    break;
-
-  case FR_SIZE:
-    current_config.frame_size = (framesize_t)value;
-  break;
-
-  case FB_SIZE:
-    current_config.fb_count = value;
-  break;
+  case FLASH: set_flash(value); break;
+  case PX_FORMAT: current_config.pixel_format = (pixformat_t)value; break;
+  case FR_SIZE: current_config.frame_size = (framesize_t)value; break;
+  case FB_SIZE: current_config.fb_count = value; break;
+  case JPEG_QUALITY: current_config.jpeg_quality = value; s->set_quality(s,value); break;
+  case BRIGHTNESS: s->set_brightness(s,value); break;
+  case CONTRAST: s->set_contrast(s,value); break;
+  case SATURATION: s->set_saturation(s,value); break;
+  case SHARPNESS: s->set_sharpness(s,value); break;
+  case WB: s->set_whitebal(s,value); break;
+  case WB_MODE: s->set_wb_mode(s,value); break;
+  case AWB_GAIN: s->set_awb_gain(s,value); break;
+  case EXP_CTRL: s->set_exposure_ctrl(s,value); break;
+  case AE_LEVEL: s->set_ae_level(s,value); break;
+  case AEC2: s->set_aec2(s,value); break;
+  case GAIN_CTRL: s->set_gain_ctrl(s,value); break;
+  case GAIN_CEILING: s->set_gainceiling(s,(gainceiling_t)value); break;
+  case LENS_CORR: s->set_lenc(s,value); break;
+  case MIRROR: s->set_hmirror(s,value); break;
+  case FLIP: s->set_vflip(s,value); break;
+  case SPECIAL: s->set_special_effect(s,value); break;
 
   case APPLY_CAM:
     esp_camera_deinit();
@@ -63,25 +88,25 @@ void modeSet(modetype mode,uint8_t value = 0){
   }
 }
 
-void handleModesetSerial(uint8_t data){
-    switch (read_buffer)
-    {
-    case HEADER:
-      if(data == 0xFF) read_buffer = MODE;
-      else return;
-      break;
-    case MODE:
-      mode_buffer = (modetype)data;
-      read_buffer = VALUE;
-      break;
-    case VALUE:
-      value_buffer = data;
-      read_buffer = HEADER;
-      modeSet(mode_buffer,value_buffer);
-      break;
-    default:
-    return; break;
-    }
+void handleModesetSerial(int8_t data){
+  switch (read_buffer)
+  {
+  case HEADER:
+    if(data == 0xFF) read_buffer = MODE;
+    else return;
+    break;
+  case MODE:
+    mode_buffer = (modetype)data;
+    read_buffer = VALUE;
+    break;
+  case VALUE:
+    value_buffer = data;
+    read_buffer = HEADER;
+    modeSet(mode_buffer,value_buffer);
+    break;
+  default:
+  return; break;
+  }
 }
 
 void initialModeSet(){
@@ -122,15 +147,15 @@ initialModeSet();
 }
 
 void loop() {
-  while (Serial.available()){handleModesetSerial(Serial.read());}
+  while (Serial.available()){handleModesetSerial(static_cast<uint8_t>(Serial.read()));}
   if (frame_requested){
     frame_requested = false;
     camera_fb_t *fb = esp_camera_fb_get();
-    if (not fb) return;
+    if (!fb and !frame_requested and Serial.available()) return;
     Serial.write(0xAA); // Sync byte 1
     Serial.write(0xBB); // Sync byte 2
     Serial.write((uint8_t*)&fb->len, 4); // 4-byte length of the JPEG
-    Serial.write(fb->buf, fb->len);      // The actual JPEG data
+    Serial.write(fb->buf, fb->len);      // JPEG data
     
     esp_camera_fb_return(fb);
   }
