@@ -3,14 +3,13 @@
 #include <M5Menu.h>
 
 String aec_options[] = {
-    "Auto",
-    "Very Fast (200)",
-    "Fast (400)",
+    "Fast (200)",
+    "Short (400)",
     "Normal (600)",
-    "Slow (800)",
-    "Night (1000)",
+    "Long (800)",
+    "Longer (1000)",
 };
-uint8_t aec_map[] = {0,42,85,127,170,212};
+uint8_t aec_map[] = {42,85,127,170,212};
 
 String resolutions[] = {
 "96x96",
@@ -51,15 +50,15 @@ M5Menu::MenuTheme theme{
 .item_window = 5,
 .bool_true_color = GREEN,
 .bool_false_color = RED,
-.bool_true_string = "True",
-.bool_false_string = "False",
-.font = &fonts::FreeSans12pt7b};
+.bool_true_string = "On",
+.bool_false_string = "Off",
+.font = &fonts::FreeSans9pt7b};
 
 struct localCameraSettings{
   uint8_t PX_FORMAT;
   uint8_t FR_SIZE;
   uint8_t FB_SIZE;
-  uint8_t JPEG_QUALITY; //0 to 63
+  uint8_t JPEG_QUALITY = 6; //0 to 63
 };
 
 struct GlobalCameraSettings {
@@ -82,29 +81,29 @@ struct GlobalCameraSettings {
     int8_t SPECIAL = 0;
 };
 GlobalCameraSettings global_settings = {};
-localCameraSettings viewfinder_settings = {};
+localCameraSettings viewfinder_settings = {1};
 localCameraSettings photo_settings = {};
 localCameraSettings recording_settings = {};
 
 M5Menu::MenuItem global_settings_items[] = {
-    {"Apply settings",apply_modeset},
-    {"brightness",&global_settings.BRIGHTNESS,1,-2,2},
-    {"contrast",&global_settings.CONTRAST,1,-2,2},
-    {"saturation",&global_settings.SATURATION,1,-2,2},
-    {"sharpness",&global_settings.SHARPNESS,1,-2,2},
-    {"wb",&global_settings.WB},
-    {"wb_mode",&global_settings.WB_MODE,1,0,4},
-    {"awb_gain",&global_settings.AWB_GAIN},
-    {"exp_ctrl",&global_settings.EXP_CTRL},
-    {"ae_level",&global_settings.AE_LEVEL,1,-2,2},
-    {"aec_value",&global_settings.AEC_VALUE,aec_options},
-    {"aec2",&global_settings.AEC2},
-    {"gain_ctrl",&global_settings.GAIN_CTRL},
-    {"gain_ceiling",&global_settings.GAIN_CEILING},
-    {"lens_corr",&global_settings.LENS_CORR},
-    {"mirror",&global_settings.MIRROR},
-    {"flip",&global_settings.FLIP},
-    {"special",&global_settings.SPECIAL,1,0,6}
+    {"Apply Settings", apply_modeset},
+    {"Brightness", &global_settings.BRIGHTNESS, 1, -2, 2},
+    {"Contrast", &global_settings.CONTRAST, 1, -2, 2},
+    {"Saturation", &global_settings.SATURATION, 1, -2, 2},
+    {"Sharpness", &global_settings.SHARPNESS, 1, -2, 2},
+    {"Auto White Balance", &global_settings.WB},
+    {"White Balance Mode", &global_settings.WB_MODE, 1, 0, 4},
+    {"Auto WB Gain", &global_settings.AWB_GAIN},
+    {"Auto Exposure", &global_settings.EXP_CTRL},
+    {"Exposure Bias", &global_settings.AE_LEVEL, 1, -2, 2},
+    {"Exposure Speed", &global_settings.AEC_VALUE, aec_options},
+    {"Enhanced Exposure", &global_settings.AEC2},
+    {"Auto Gain", &global_settings.GAIN_CTRL},
+    {"Max Gain", &global_settings.GAIN_CEILING},
+    {"Lens Correction", &global_settings.LENS_CORR},
+    {"Mirror Image", &global_settings.MIRROR},
+    {"Flip Image", &global_settings.FLIP},
+    {"Color Effect", &global_settings.SPECIAL, 1, 0, 6}
 };
 M5Menu::Menu global_menu_settings(4,global_settings_items);
 

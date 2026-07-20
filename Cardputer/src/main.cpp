@@ -10,45 +10,34 @@ M5CADVKeyCB keyHandler;
 M5Menu menu;
 M5Canvas canvas(&M5.Lcd);
 
-
-enum PixFormat{
-    PIXFORMAT_RGB565,    // 2BPP/RGB565
-    PIXFORMAT_YUV422,    // 2BPP/YUV422
-    PIXFORMAT_YUV420,    // 1.5BPP/YUV420
-    PIXFORMAT_GRAYSCALE, // 1BPP/GRAYSCALE
-    PIXFORMAT_JPEG,      // JPEG/COMPRESSED
-    PIXFORMAT_RGB888,    // 3BPP/RGB888
-    PIXFORMAT_RAW,       // RAW
-    PIXFORMAT_RGB444,    // 3BP2P/RGB444
-    PIXFORMAT_RGB555,    // 3BP2P/RGB555
+struct Resolution {
+    uint16_t w;
+    uint16_t h;
 };
 
-enum FrameSize{
-    FRAMESIZE_96X96,    // 96x96
-    FRAMESIZE_QQVGA,    // 160x120
-    FRAMESIZE_QCIF,     // 176x144
-    FRAMESIZE_HQVGA,    // 240x176
-    FRAMESIZE_240X240,  // 240x240
-    FRAMESIZE_QVGA,     // 320x240
-    FRAMESIZE_CIF,      // 400x296
-    FRAMESIZE_HVGA,     // 480x320
-    FRAMESIZE_VGA,      // 640x480
-    FRAMESIZE_SVGA,     // 800x600
-    FRAMESIZE_XGA,      // 1024x768
-    FRAMESIZE_HD,       // 1280x720
-    FRAMESIZE_SXGA,     // 1280x1024
-    FRAMESIZE_UXGA,     // 1600x1200
-    // 3MP Sensors
-    FRAMESIZE_FHD,      // 1920x1080
-    FRAMESIZE_P_HD,     //  720x1280
-    FRAMESIZE_P_3MP,    //  864x1536
-    FRAMESIZE_QXGA,     // 2048x1536
-    // 5MP Sensors
-    FRAMESIZE_QHD,      // 2560x1440
-    FRAMESIZE_WQXGA,    // 2560x1600
-    FRAMESIZE_P_FHD,    // 1080x1920
-    FRAMESIZE_QSXGA,    // 2560x1920
-    FRAMESIZE_INVALID
+const Resolution frameSizes[] = {
+    {96,96},
+    {160,120},
+    {176,144},
+    {240,176},
+    {240,240},
+    {320,240},
+    {400,296},
+    {480,320},
+    {640,480},
+    {800,600},
+    {1024,768},
+    {1280,720},
+    {1280,1024},
+    {1600,1200},
+    {1920,1080},
+    {720,1280},
+    {864,1536},
+    {2048,1536},
+    {2560,1440},
+    {2560,1600},
+    {1080,1920},
+    {2560,1920},
 };
 
 enum ReceiveState {
@@ -86,8 +75,6 @@ enum modetype{
   REQUEST_FRAME
 };
 
-
-
 bool force_flash = false;
 
 ReceiveState rx_state = WAIT_SYNC_1;
@@ -101,7 +88,7 @@ uint32_t frame_bytes_read = 0;
 uint8_t video_buffer[MAX_IMG_SIZE];
 
 unsigned long lastFrameTime = 0;
-const unsigned long FRAME_TIMEOUT = 100;
+const unsigned long FRAME_TIMEOUT = 500;
 bool video_starved = false;
 
 bool at_menu = false;
@@ -190,6 +177,7 @@ void OnKey(uint8_t key, bool pressed){
 
 void reinit_camera(){
   modeSetSend(APPLY_CAM);
+  delay(500);
   apply_modeset();
 }
 
@@ -220,15 +208,9 @@ void apply_viewfinder_settings(){
 }
 
 void apply_photo_settings(){
-  modeSetSend(FR_SIZE,photo_settings.FR_SIZE);
-  modeSetSend(JPEG_QUALITY,photo_settings.JPEG_QUALITY);
-  reinit_camera();
 }
 
 void apply_recording_settings(){
-  modeSetSend(FR_SIZE,recording_settings.FR_SIZE);
-  modeSetSend(JPEG_QUALITY,recording_settings.JPEG_QUALITY);
-  reinit_camera();
 }
 
 void RequestFrame(){
@@ -266,11 +248,12 @@ void CameraTick(){
       lastFrameTime = millis();
       // If we have received the full JPEG
       if (frame_bytes_read >= jpeg_length) {
-        int x = (M5.Display.width() - IMG_WIDTH) / 2;
-        int y = (M5.Display.height() - IMG_HEIGHT) / 2;
+        Resolution r = frameSizes[viewfinder_settings.FR_SIZE];
+        float scale = min((float)canvas.width() / r.w, (float)canvas.height() / r.h);
+        int x = (canvas.width() - (r.w * scale)) / 2;
+        int y = (canvas.height() - (r.h * scale)) / 2;
 
-        // Hardware decode and draw the JPEG
-        canvas.drawJpg(video_buffer, jpeg_length, x, y);
+        canvas.drawJpg(video_buffer, jpeg_length, x, y,0,0,0, scale,scale);
 
         // Reset state machine and request the next frame
         rx_state = WAIT_SYNC_1;
