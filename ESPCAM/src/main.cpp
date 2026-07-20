@@ -20,6 +20,7 @@ enum modetype{
   AWB_GAIN,
   EXP_CTRL,
   AE_LEVEL,
+  AEC_VALUE,
   AEC2,
   GAIN_CTRL,
   GAIN_CEILING,
@@ -66,6 +67,7 @@ void modeSet(modetype mode,int8_t value = 0){
   case AWB_GAIN: s->set_awb_gain(s,value); break;
   case EXP_CTRL: s->set_exposure_ctrl(s,value); break;
   case AE_LEVEL: s->set_ae_level(s,value); break;
+  case AEC_VALUE: s->set_aec_value(s,(uint16_t)static_cast<uint8_t>(value) * 1200 / 255); break;
   case AEC2: s->set_aec2(s,value); break;
   case GAIN_CTRL: s->set_gain_ctrl(s,value); break;
   case GAIN_CEILING: s->set_gainceiling(s,(gainceiling_t)value); break;

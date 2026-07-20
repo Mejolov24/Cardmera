@@ -74,6 +74,7 @@ enum modetype{
   AWB_GAIN,
   EXP_CTRL,
   AE_LEVEL,
+  AEC_VALUE,
   AEC2,
   GAIN_CTRL,
   GAIN_CEILING,
@@ -85,19 +86,7 @@ enum modetype{
   REQUEST_FRAME
 };
 
-struct CameraSettings{
-  PixFormat format;
-  FrameSize size;
-  bool flash;
-  uint8_t jpeg_quality;// 0-63: Lower is better quality
-  int8_t brightness;
-  int8_t contrast;
-  int8_t saturation;
 
-  bool awb_enabled;// Auto White Balance
-  bool aec_enabled;// Auto Exposure Control
-  int8_t exposure_comp;// -2 to +2 (Manual override)
-};
 
 bool force_flash = false;
 
@@ -168,6 +157,7 @@ void OnKey(uint8_t key, bool pressed){
     at_menu = !at_menu;
     at_menu ? menu.open() : menu.close();
   }
+  if (status.del){menu.process_input(M5Menu::Input::BACK);}
   if (status.enter) menu.process_input(M5Menu::Input::SELECT);
   Serial.print(key);
   if(!pressed) return;
@@ -197,11 +187,48 @@ void OnKey(uint8_t key, bool pressed){
   }
 }
 
-void apply_settings(){
-  modeSetSend(FR_SIZE,current_resolution);
-  modeSetSend(SPECIAL,special);
-  modeSetSend(JPEG_QUALITY,jpeg_quality);
+
+void reinit_camera(){
   modeSetSend(APPLY_CAM);
+  apply_modeset();
+}
+
+void apply_modeset(){
+modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
+modeSetSend(CONTRAST,global_settings.CONTRAST);
+modeSetSend(CONTRAST,global_settings.CONTRAST);
+modeSetSend(SHARPNESS,global_settings.SHARPNESS);
+modeSetSend(WB,global_settings.WB);
+modeSetSend(WB_MODE,global_settings.WB_MODE);
+modeSetSend(AWB_GAIN,global_settings.AWB_GAIN);
+modeSetSend(EXP_CTRL,global_settings.EXP_CTRL);
+modeSetSend(AE_LEVEL,global_settings.AE_LEVEL);
+modeSetSend(AEC_VALUE,static_cast<int8_t>(aec_map[global_settings.AEC_VALUE]));
+modeSetSend(AEC2,global_settings.AEC2);
+modeSetSend(GAIN_CTRL,global_settings.GAIN_CTRL);
+modeSetSend(GAIN_CEILING,global_settings.GAIN_CEILING);
+modeSetSend(LENS_CORR,global_settings.LENS_CORR);
+modeSetSend(MIRROR,global_settings.MIRROR);
+modeSetSend(FLIP,global_settings.FLIP);
+modeSetSend(SPECIAL,global_settings.SPECIAL);
+}
+
+void apply_viewfinder_settings(){
+  modeSetSend(FR_SIZE,viewfinder_settings.FR_SIZE);
+  modeSetSend(JPEG_QUALITY,viewfinder_settings.JPEG_QUALITY);
+  reinit_camera();
+}
+
+void apply_photo_settings(){
+  modeSetSend(FR_SIZE,photo_settings.FR_SIZE);
+  modeSetSend(JPEG_QUALITY,photo_settings.JPEG_QUALITY);
+  reinit_camera();
+}
+
+void apply_recording_settings(){
+  modeSetSend(FR_SIZE,recording_settings.FR_SIZE);
+  modeSetSend(JPEG_QUALITY,recording_settings.JPEG_QUALITY);
+  reinit_camera();
 }
 
 void RequestFrame(){
