@@ -51,6 +51,7 @@ void apply_modeset(){
   // discard old camera data
   rx_state = WAIT_SYNC_1;
   frame_bytes_read=0;
+  while (Serial2.available()) {Serial2.read();}
   modeSetSend(FR_SIZE,current_settings->FR_SIZE);
   modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
   modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
@@ -85,7 +86,6 @@ void OnKey(uint8_t key, bool pressed){
   }
   if (status.del){menu.process_input(M5Menu::Input::BACK);}
   if (status.enter) menu.process_input(M5Menu::Input::SELECT);
-  Serial.print(key);
   if(!pressed) return;
   switch (key){
     case 53: // escape
@@ -253,7 +253,6 @@ void CameraTick(){
         rx_state = WAIT_SYNC_1;
         modeSetSend(REQUEST_FRAME);
         render();
-        Serial.println("FRAME COMPLETE");
         break;
     }
     default:
@@ -264,7 +263,6 @@ void CameraTick(){
 }
 
 void button_press(){
-  Serial.println("PRESS");
   M5Cardputer.Speaker.tone(CAMERA_PRESS,30);
   current_settings = &photo_settings;
   apply_modeset();
