@@ -5,7 +5,9 @@
 #include <Menu.h>
 #include <OneButton.h>
 #include <Ticker.h>
-#include <SD.h>
+#include <SdFat.h>
+SdFat sd;
+FsFile current_file;
 OneButton g0Button(0, true);
 M5CADVKeyCB keyHandler;
 M5Menu menu;
@@ -18,7 +20,7 @@ bool is_receiving = false;
 uint32_t jpeg_length = 0;
 uint32_t frame_bytes_read = 0;
 
-#define MAX_IMG_SIZE 81920
+#define MAX_IMG_SIZE 150000
 uint8_t video_buffer[MAX_IMG_SIZE];
 
 unsigned long lastFrameTime = 0;
@@ -30,7 +32,6 @@ bool pending_modeset = false;
 bool holding_shutter = false;
 bool pending_photo = false;// true when modeset applied and hasnt recived any frames
 uint16_t sd_files_amount = 0;
-File current_file;
 localCameraSettings* current_settings = &viewfinder_settings;
 
 
@@ -181,13 +182,16 @@ void invert_endians(int x, int y, int w, int h) {
 
 void update_SD(){
   sd_files_amount = 0;
-  File root = SD.open("/AppData/Cardmera/DCMI");
-  if(!root) return;
-  while(true){
-    File dir = root.openNextFile();
-    if(!dir) break;
-    if(!dir.isDirectory())sd_files_amount++;
-    dir.close();
+  FsFile root;
+  FsFile file;
+
+  if (!root.open("/AppData/Cardmera/DCMI")) return;
+
+  while (file.openNext(&root, O_RDONLY)) {
+    if (!file.isDir()) {
+        sd_files_amount++;
+    }
+    file.close();
   }
   root.close();
 }
@@ -196,7 +200,7 @@ void update_SD(){
 void take_photo(){
   char filename[256];
   snprintf(filename, sizeof(filename), "/AppData/Cardmera/DCMI/Photo_%u.jpeg", sd_files_amount);
-  current_file = SD.open(filename,FILE_WRITE);
+  current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
   current_file.write(video_buffer,jpeg_length);
   current_file.close();
   update_SD();
@@ -292,10 +296,10 @@ void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
   SPI.begin(SD_SPI_SCK_PIN, SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN, SD_SPI_CS_PIN);
-  SD.begin(SD_SPI_CS_PIN, SPI, 25000000);
-  SD.mkdir("/AppData");
-  SD.mkdir("/AppData/Cardmera");
-  SD.mkdir("/AppData/Cardmera/DCMI");
+  sd.begin(SD_SPI_CS_PIN, SD_SCK_MHZ(25));
+  sd.mkdir("/AppData");
+  sd.mkdir("/AppData/Cardmera");
+  sd.mkdir("/AppData/Cardmera/DCMI");
   update_SD();
   Serial.begin(9600);
   canvas.setBaseColor(BLACK);

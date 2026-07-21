@@ -59,10 +59,10 @@ void modeSet(modetype mode,int8_t value = 0){
       while (millis() - start_time < 500) {
         fb = esp_camera_fb_get();
         if (fb) {
-          esp_camera_fb_return(fb); // Release it immediately since this is just a readiness check
+          esp_camera_fb_return(fb);
           break;
         }
-        delay(10); // Small check interval
+        delay(10);
       }
     break;}
   case JPEG_QUALITY: s->set_quality(s,value); break;
@@ -159,7 +159,7 @@ void loop() {
     if(!fb) return;
     Serial.write(0xAA); // Sync byte 1
     Serial.write(0xBB); // Sync byte 2
-    Serial.write((uint8_t*)&fb->len, 4); // 4-byte length of the JPEG
+    Serial.write((uint8_t*)&fb->len, 4); // length of JPEG
     Serial.write(fb->buf, fb->len);      // JPEG data
     
     esp_camera_fb_return(fb);
