@@ -38,7 +38,7 @@ readState read_buffer = HEADER;
 modetype mode_buffer;
 int8_t value_buffer;
 bool frame_requested = false;
-
+framesize_t previous_fr;
 
 
 void set_flash(bool value){
@@ -50,7 +50,21 @@ void modeSet(modetype mode,int8_t value = 0){
   switch (mode)
   {
   case FLASH: set_flash(value); break;
-  case FR_SIZE: s->set_framesize(s,(framesize_t)value); break;
+  case FR_SIZE:{
+    unsigned long start_time = millis();
+    camera_fb_t *fb = NULL;
+    if (previous_fr == (framesize_t)value) break;
+    previous_fr = (framesize_t)value;
+    s->set_framesize(s,(framesize_t)value);
+      while (millis() - start_time < 500) {
+        fb = esp_camera_fb_get();
+        if (fb) {
+          esp_camera_fb_return(fb); // Release it immediately since this is just a readiness check
+          break;
+        }
+        delay(10); // Small check interval
+      }
+    break;}
   case JPEG_QUALITY: s->set_quality(s,value); break;
   case BRIGHTNESS: s->set_brightness(s,value); break;
   case CONTRAST: s->set_contrast(s,value); break;
@@ -126,6 +140,7 @@ current_config.pin_d0 = 5;
   current_config.pixel_format = PIXFORMAT_JPEG;
   current_config.frame_size = FRAMESIZE_QXGA; // Allocate max size in ram
   current_config.fb_count = 1;
+  previous_fr = FRAMESIZE_QXGA;
   esp_camera_init(&current_config);
   modeSet(FR_SIZE,FRAMESIZE_QQVGA); // step down size
 }
@@ -141,7 +156,7 @@ void loop() {
   if (frame_requested){
     frame_requested = false;
     camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb and !frame_requested and Serial.available()) return;
+    if(!fb) return;
     Serial.write(0xAA); // Sync byte 1
     Serial.write(0xBB); // Sync byte 2
     Serial.write((uint8_t*)&fb->len, 4); // 4-byte length of the JPEG

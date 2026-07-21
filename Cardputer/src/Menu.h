@@ -2,6 +2,80 @@
 #define MENU_H
 #include <M5Menu.h>
 
+#define SD_SPI_SCK_PIN  40
+#define SD_SPI_MISO_PIN 39
+#define SD_SPI_MOSI_PIN 14
+#define SD_SPI_CS_PIN   12
+
+#define BEEP_1 1318.51
+#define BEEP_2 1046.50
+#define CAMERA_PRESS 4000
+#define CAMERA_RELEASE 4000
+
+#define UI_FONT &fonts::FreeSerifBold9pt7b
+#define NO_SIGNAL_FONT &fonts::FreeSerifBold12pt7b
+
+struct Resolution {
+    uint16_t w;
+    uint16_t h;
+};
+
+const Resolution frameSizes[] = {
+    {96,96},
+    {160,120},
+    {176,144},
+    {240,176},
+    {240,240},
+    {320,240},
+    {400,296},
+    {480,320},
+    {640,480},
+    {800,600},
+    {1024,768},
+    {1280,720},
+    {1280,1024},
+    {1600,1200},
+    {1920,1080},
+    {720,1280},
+    {864,1536},
+    {2048,1536},
+    {2560,1440},
+    {2560,1600},
+    {1080,1920},
+    {2560,1920},
+};
+
+enum ReceiveState {
+  WAIT_SYNC_1,
+  WAIT_SYNC_2,
+  READ_LENGTH,
+  READ_PAYLOAD
+};
+
+enum modetype{
+  FLASH,
+  FR_SIZE,
+  JPEG_QUALITY,
+  BRIGHTNESS,
+  CONTRAST,
+  SATURATION,
+  SHARPNESS,
+  WB,
+  WB_MODE,
+  AWB_GAIN,
+  EXP_CTRL,
+  AE_LEVEL,
+  AEC_VALUE,
+  AEC2,
+  GAIN_CTRL,
+  GAIN_CEILING,
+  LENS_CORR,
+  MIRROR,
+  FLIP,
+  SPECIAL,
+  REQUEST_FRAME
+};
+
 String aec_options[] = {
     "Fast (200)",
     "Short (400)",

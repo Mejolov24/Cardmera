@@ -5,71 +5,11 @@
 #include <Menu.h>
 #include <OneButton.h>
 #include <Ticker.h>
+#include <SD.h>
 OneButton g0Button(0, true);
 M5CADVKeyCB keyHandler;
 M5Menu menu;
 M5Canvas canvas(&M5.Lcd);
-
-struct Resolution {
-    uint16_t w;
-    uint16_t h;
-};
-
-const Resolution frameSizes[] = {
-    {96,96},
-    {160,120},
-    {176,144},
-    {240,176},
-    {240,240},
-    {320,240},
-    {400,296},
-    {480,320},
-    {640,480},
-    {800,600},
-    {1024,768},
-    {1280,720},
-    {1280,1024},
-    {1600,1200},
-    {1920,1080},
-    {720,1280},
-    {864,1536},
-    {2048,1536},
-    {2560,1440},
-    {2560,1600},
-    {1080,1920},
-    {2560,1920},
-};
-
-enum ReceiveState {
-  WAIT_SYNC_1,
-  WAIT_SYNC_2,
-  READ_LENGTH,
-  READ_PAYLOAD
-};
-
-enum modetype{
-  FLASH,
-  FR_SIZE,
-  JPEG_QUALITY,
-  BRIGHTNESS,
-  CONTRAST,
-  SATURATION,
-  SHARPNESS,
-  WB,
-  WB_MODE,
-  AWB_GAIN,
-  EXP_CTRL,
-  AE_LEVEL,
-  AEC_VALUE,
-  AEC2,
-  GAIN_CTRL,
-  GAIN_CEILING,
-  LENS_CORR,
-  MIRROR,
-  FLIP,
-  SPECIAL,
-  REQUEST_FRAME
-};
 
 bool force_flash = false;
 
@@ -88,15 +28,11 @@ bool video_starved = false;
 bool at_menu = false;
 bool pending_modeset = false;
 bool holding_shutter = false;
+bool pending_photo = false;// true when modeset applied and hasnt recived any frames
+uint16_t sd_files_amount = 0;
+File current_file;
 localCameraSettings* current_settings = &viewfinder_settings;
 
-#define BEEP_1 1318.51
-#define BEEP_2 1046.50
-#define CAMERA_PRESS 1567.98
-#define CAMERA_RELEASE 2093.00
-
-#define UI_FONT &fonts::FreeSerifBold9pt7b
-#define NO_SIGNAL_FONT &fonts::FreeSerifBold12pt7b
 
 void modeSetSend(modetype mode,int8_t value = 0){
 Serial2.write(0xFF);
@@ -139,7 +75,8 @@ void render(){
 
 void apply_modeset(){
 // discard old camera data
-//while (Serial2.available()) {Serial2.read();}
+while (Serial2.available()) {Serial2.read();}
+rx_state = WAIT_SYNC_1;
 modeSetSend(FR_SIZE,current_settings->FR_SIZE);
 modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
 modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
@@ -159,6 +96,7 @@ modeSetSend(LENS_CORR,global_settings.LENS_CORR);
 modeSetSend(MIRROR,global_settings.MIRROR);
 modeSetSend(FLIP,global_settings.FLIP);
 modeSetSend(SPECIAL,global_settings.SPECIAL);
+modeSetSend(REQUEST_FRAME);
 }
 
 
@@ -218,12 +156,10 @@ void invert_rgb(int x, int y, int w, int h) {
 
       uint16_t p = pixels[i];
 
-      // RGB565 extraction
       uint16_t r = (p >> 11) & 0x1F;
       uint16_t g = (p >> 5)  & 0x3F;
       uint16_t b = p & 0x1F;
 
-      // swap red and blue
       pixels[i] = (b << 11) | (g << 5) | r;
     }
   }
@@ -238,11 +174,37 @@ void invert_endians(int x, int y, int w, int h) {
 
       uint16_t p = pixels[i];
 
-      // swap the two bytes
       pixels[i] = (p >> 8) | (p << 8);
     }
   }
 }
+
+void update_SD(){
+  sd_files_amount = 0;
+  File root = SD.open("/AppData/Cardmera/DCMI");
+  if(!root) return;
+  while(true){
+    File dir = root.openNextFile();
+    if(!dir) break;
+    if(!dir.isDirectory())sd_files_amount++;
+    dir.close();
+  }
+  root.close();
+}
+
+
+void take_photo(){
+  char filename[256];
+  snprintf(filename, sizeof(filename), "/AppData/Cardmera/DCMI/Photo_%u.jpeg", sd_files_amount);
+  current_file = SD.open(filename,FILE_WRITE);
+  current_file.write(video_buffer,jpeg_length);
+  current_file.close();
+  update_SD();
+  M5Cardputer.Speaker.tone(CAMERA_RELEASE,30);
+  current_settings = &viewfinder_settings;
+  apply_modeset();
+}
+
 void CameraTick(){
   if (!is_receiving or at_menu) return;
   if (pending_modeset and !at_menu) apply_modeset(); pending_modeset = false;
@@ -281,6 +243,9 @@ void CameraTick(){
         if (global_settings.invert_rgb) invert_rgb(x, y, r.w * scale, r.h * scale);
         if (global_settings.invert_endians) invert_endians(x, y, r.w * scale, r.h * scale);
         // Reset state machine and request the next frame
+        if (pending_photo) take_photo();
+        pending_photo = false;
+        video_starved = false;
         rx_state = WAIT_SYNC_1;
         modeSetSend(REQUEST_FRAME);
         render();
@@ -309,20 +274,16 @@ void camera_poll(){
 }
 
 Ticker camera_poll_ticker(camera_poll,FRAME_TIMEOUT,0,MILLIS);
-void take_photo(){
-  
-}
+
 
 void button_press(){
-  M5Cardputer.Speaker.tone(CAMERA_PRESS,100);
+  M5Cardputer.Speaker.tone(CAMERA_PRESS,30);
   current_settings = &photo_settings;
   apply_modeset();
   holding_shutter = true;
 }
 void button_release(){
-  M5Cardputer.Speaker.tone(CAMERA_RELEASE,100);
-  current_settings = &viewfinder_settings;
-  apply_modeset();
+  pending_photo = true;
   holding_shutter = false;
 }
 
@@ -330,10 +291,16 @@ void button_release(){
 void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
+  SPI.begin(SD_SPI_SCK_PIN, SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN, SD_SPI_CS_PIN);
+  SD.begin(SD_SPI_CS_PIN, SPI, 25000000);
+  SD.mkdir("/AppData");
+  SD.mkdir("/AppData/Cardmera");
+  SD.mkdir("/AppData/Cardmera/DCMI");
+  update_SD();
+  Serial.begin(9600);
   canvas.setBaseColor(BLACK);
   M5Cardputer.Display.setFont(UI_FONT);
   canvas.createSprite(240, 135);
-  Serial.begin(9600);
   Serial2.setRxBufferSize(40000);
   Serial2.begin(2000000,SERIAL_8N1,13,15);
   camera_poll_ticker.start();
@@ -351,6 +318,7 @@ void setup() {
   M5Cardputer.Speaker.tone(BEEP_2,100);
   apply_modeset();
   RequestFrame();
+
 }
 
 void loop() {
