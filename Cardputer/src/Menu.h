@@ -148,6 +148,7 @@ struct GlobalCameraSettings {
     bool MIRROR = false;
     bool FLIP = false;
     int8_t SPECIAL = 0;
+    uint8_t frame_await = 0;
     bool direct_write = false;
 
     bool invert_rgb = false;
@@ -222,6 +223,10 @@ M5Menu::MenuItem photo_settings_items[] = {
         1,
         0,
         63
+    },
+    {
+        "Frame await",
+        &global_settings.frame_await
     },
     {
         "Direct Write",

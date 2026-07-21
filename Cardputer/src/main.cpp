@@ -26,18 +26,21 @@ uint8_t video_buffer[MAX_IMG_SIZE];
 
 unsigned long lastFrameTime = 0;
 const unsigned long FRAME_TIMEOUT = 500;
+uint8_t frame_await_queque = 0;
 
 bool at_menu = false;
 bool pending_modeset = false;
 bool holding_shutter = false;
-bool pending_photo = false;// true when modeset applied and hasnt recived any frames
 bool IsSDValid = true;
 bool out_of_memory = false;
-bool has_frame = false;
 uint16_t sd_files_amount = 0;
 localCameraSettings* current_settings = &viewfinder_settings;
-
-
+enum FrameState {
+  FRAME_NORMAL,
+  FRAME_WAITING_PHOTO,
+  FRAME_PHOTO_READY
+};
+FrameState frame_state = FRAME_NORMAL;
 void modeSetSend(modetype mode,int8_t value = 0){
 Serial2.write(0xFF);
 Serial2.write(mode);
@@ -46,8 +49,8 @@ Serial2.write(static_cast<uint8_t>(value));
 
 void apply_modeset(){
   // discard old camera data
-  while (Serial2.available()) {Serial2.read();}
   rx_state = WAIT_SYNC_1;
+  frame_bytes_read=0;
   modeSetSend(FR_SIZE,current_settings->FR_SIZE);
   modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
   modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
@@ -67,7 +70,7 @@ void apply_modeset(){
   modeSetSend(MIRROR,global_settings.MIRROR);
   modeSetSend(FLIP,global_settings.FLIP);
   modeSetSend(SPECIAL,global_settings.SPECIAL);
-  modeSetSend(REQUEST_FRAME);
+  if (frame_state != FRAME_PHOTO_READY) modeSetSend(REQUEST_FRAME);
 }
 
 void OnUsage(M5Menu::MenuItem* item, M5Menu::Menu* menu){
@@ -168,17 +171,18 @@ rx_state = WAIT_SYNC_1;
 }
 
 void take_photo(){
-  pending_photo = false;
+  frame_state = FRAME_NORMAL;
+  frame_await_queque = 0;
   M5Cardputer.Speaker.tone(CAMERA_RELEASE,30);
   current_settings = &viewfinder_settings;
-  apply_modeset();
-  if(!IsSDValid) return;
+  if(!IsSDValid) {apply_modeset(); return;}
   char filename[256];
   snprintf(filename, sizeof(filename), "/DCMI/Photo_%u.jpeg", sd_files_amount);
   current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
   current_file.write(video_buffer,jpeg_length);
   current_file.close();
   update_SD();
+  apply_modeset();
 }
 
 void camera_poll(){
@@ -191,6 +195,7 @@ void camera_poll(){
       canvas.setTextColor(RED,BLACK);
       canvas.drawString("Out of Memory!",M5.Display.width()/2,M5.Display.height()/2 - 14);
       canvas.drawString("Enable DW!",M5.Display.width()/2,M5.Display.height()/2 + 14);
+      out_of_memory = false;
     }
     else{
       canvas.setTextColor(ORANGE,BLACK);
@@ -205,8 +210,7 @@ Ticker camera_poll_ticker(camera_poll,FRAME_TIMEOUT,0,MILLIS);
 
 void CameraTick(){
   if (!is_receiving or at_menu) return;
-  if (pending_modeset and !at_menu){ apply_modeset(); pending_modeset = false; Serial.println("TAKE PHOTO");}
-  if(pending_photo and has_frame) take_photo();
+  if (pending_modeset and !at_menu){ apply_modeset(); pending_modeset = false;}
   while (Serial2.available() > 0) {
   switch (rx_state)
     {
@@ -242,7 +246,10 @@ void CameraTick(){
         if (global_settings.invert_endians) invert_endians(x, y, r.w * scale, r.h * scale);
 
         // Reset state machine and request the next frame
-        has_frame = true;
+        if (frame_state == FRAME_WAITING_PHOTO){
+          frame_await_queque ++;
+          if(frame_await_queque >= global_settings.frame_await) frame_state = FRAME_PHOTO_READY;
+        }
         rx_state = WAIT_SYNC_1;
         modeSetSend(REQUEST_FRAME);
         render();
@@ -253,6 +260,7 @@ void CameraTick(){
       break;
     }
   }
+  if(frame_state == FRAME_PHOTO_READY){take_photo();}
 }
 
 void button_press(){
@@ -260,12 +268,11 @@ void button_press(){
   M5Cardputer.Speaker.tone(CAMERA_PRESS,30);
   current_settings = &photo_settings;
   apply_modeset();
-  has_frame = false;
+  frame_await_queque = 0;
   holding_shutter = true;
 }
 void button_release(){
-  Serial.println("RELEASE");
-  pending_photo = true;
+  frame_state = FRAME_WAITING_PHOTO;
   holding_shutter = false;
 }
 
