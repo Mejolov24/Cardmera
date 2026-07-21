@@ -37,9 +37,9 @@ enum readState{
 readState read_buffer = HEADER;
 modetype mode_buffer;
 int8_t value_buffer;
-bool frame_requested = false;
 framesize_t previous_fr;
-
+bool frame_requested = false;
+bool pending_frame_flush = false;
 
 void set_flash(bool value){
   digitalWrite(FLASH_GPIO_NUM,value);
@@ -51,20 +51,12 @@ void modeSet(modetype mode,int8_t value = 0){
   {
   case FLASH: set_flash(value); break;
   case FR_SIZE:{
-    unsigned long start_time = millis();
-    camera_fb_t *fb = NULL;
     if (previous_fr == (framesize_t)value) break;
     previous_fr = (framesize_t)value;
     s->set_framesize(s,(framesize_t)value);
-      while (millis() - start_time < 500) {
-        fb = esp_camera_fb_get();
-        if (fb) {
-          esp_camera_fb_return(fb);
-          break;
-        }
-        delay(10);
-      }
-    break;}
+    pending_frame_flush = true;
+    break;
+  }
   case JPEG_QUALITY: s->set_quality(s,value); break;
   case BRIGHTNESS: s->set_brightness(s,value); break;
   case CONTRAST: s->set_contrast(s,value); break;
@@ -84,9 +76,14 @@ void modeSet(modetype mode,int8_t value = 0){
   case FLIP: s->set_vflip(s,value); break;
   case SPECIAL: s->set_special_effect(s,value); break;
 
-  case REQUEST_FRAME:
-  frame_requested = true;
-  break;
+  case REQUEST_FRAME:{
+    frame_requested = true;
+    if(!pending_frame_flush) break;
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb) {esp_camera_fb_return(fb);}
+    pending_frame_flush = false;
+    break;
+  }
 
   default:
     break;
