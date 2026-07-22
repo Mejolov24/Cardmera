@@ -151,7 +151,7 @@ current_config.pin_d0 = 5;
   current_config.jpeg_quality = 12; 
   current_config.pixel_format = PIXFORMAT_JPEG;
   current_config.frame_size = FRAMESIZE_QXGA; // Allocate max size in ram
-  current_config.fb_count = 2;
+  current_config.fb_count = 1;
   previous_fr = FRAMESIZE_QXGA;
   esp_camera_init(&current_config);
   modeSet(FR_SIZE,FRAMESIZE_QQVGA); // step down size

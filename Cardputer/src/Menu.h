@@ -151,7 +151,7 @@ struct GlobalCameraSettings {
     bool GAIN_CTRL = true;
     int8_t GAIN_CEILING = 0;
     uint8_t AGC_GAIN = 0;
-    uint8_t DENOISE = 2;
+    uint8_t DENOISE = 8;
     bool RAW_GMA = true;
     bool BPC = true;
     bool WPC = true;

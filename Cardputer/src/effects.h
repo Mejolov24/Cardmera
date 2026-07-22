@@ -3,6 +3,15 @@
 #include <stdint.h>
 #include <M5GFX.h>
 extern M5Canvas canvas;
+
+uint32_t fast_noise() {
+    static uint32_t state = 0xACE1u; // Seed
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+}
+
 void invert_rgb(int x, int y, int w, int h) {
   uint16_t* pixels = (uint16_t*)canvas.getBuffer();
 
@@ -21,6 +30,7 @@ void invert_rgb(int x, int y, int w, int h) {
     }
   }
 }
+
 void invert_endians(int x, int y, int w, int h) {
   uint16_t* pixels = (uint16_t*)canvas.getBuffer();
 

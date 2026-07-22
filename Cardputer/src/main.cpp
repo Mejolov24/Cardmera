@@ -22,6 +22,13 @@ uint32_t jpeg_length = 0;
 uint32_t frame_bytes_read = 0;
 
 #define MAX_IMG_SIZE 150000
+#define BUFFER_A_START 0
+#define BUFFER_A_END ((MAX_IMG_SIZE - 1) /2)
+#define BUFFER_B_START ((MAX_IMG_SIZE) /2)
+#define BUFFER_B_END MAX_IMG_SIZE
+#define ACTION_WRITE_SD_BUFFER 1
+#define ACTION_WRITE_SD_BUFFER_A 2
+#define ACTION_WRITE_SD_BUFFER_B 3
 uint8_t video_buffer[MAX_IMG_SIZE];
 
 unsigned long lastFrameTime = 0;
@@ -34,12 +41,20 @@ bool IsSDValid = true;
 bool out_of_memory = false;
 uint16_t sd_files_amount = 0;
 localCameraSettings* current_settings = &viewfinder_settings;
+TaskHandle_t SDHandlerTask;
+
 enum FrameState {
+  FRAME_SD_LOCK,
   FRAME_NORMAL,
   FRAME_WAITING_PHOTO,
   FRAME_PHOTO_READY
 };
 FrameState frame_state = FRAME_NORMAL;
+enum Mode{
+  MODE_PHOTO,
+  MODE_VIDEO
+};
+Mode current_mode = MODE_PHOTO;
 void modeSetSend(modetype mode,int8_t value = 0){
 Serial2.write(0xFF);
 Serial2.write(mode);
@@ -125,14 +140,13 @@ void OnKey(uint8_t key, bool pressed){
   }
 }
 
-
-void update_SD(){
+void update_SD_Count(){
   if(!IsSDValid) return;
   sd_files_amount = 0;
   FsFile root;
   FsFile file;
 
-  if (!root.open("/DCMI")) return;
+  if (!root.open("/DCIM")) return;
 
   while (file.openNext(&root, O_RDONLY)) {
     if (!file.isDir()) {
@@ -143,13 +157,49 @@ void update_SD(){
   root.close();
 }
 
-uint32_t fast_noise() {
-    static uint32_t state = 0xACE1u; // Seed
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    return state;
+void SDTask(void *pvParameters){
+  uint32_t notificationValue = 0;
+  char filename[256];
+  for(;;){
+      if (xTaskNotifyWait(0x00, 0xFFFFFFFF, &notificationValue, portMAX_DELAY) == pdPASS) {
+        switch (current_mode)
+        {
+        case MODE_PHOTO:
+        snprintf(filename, sizeof(filename), "/DCIM/Photo_%u.jpeg", sd_files_amount);
+          break;
+        
+        default: break;
+        }
+
+        switch (notificationValue)
+        {
+        
+        case ACTION_WRITE_SD_BUFFER:{
+            current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
+            current_file.write(video_buffer,jpeg_length);
+            current_file.close();
+            update_SD_Count();
+            frame_state = FRAME_NORMAL;
+        }
+          break;
+
+        case ACTION_WRITE_SD_BUFFER_A:
+          break;
+        case ACTION_WRITE_SD_BUFFER_B:
+          break;
+        
+        default: break;
+        }
+      }
+  }
 }
+
+void SDWrite(){
+  frame_state = FRAME_SD_LOCK;
+  if(global_settings.direct_write){}
+  else{xTaskNotify(SDHandlerTask, ACTION_WRITE_SD_BUFFER, eSetValueWithOverwrite);}
+}
+
 
 void renderStatic() {
   Resolution r = frameSizes[current_settings->FR_SIZE];
@@ -188,12 +238,7 @@ void take_photo(){
   M5Cardputer.Speaker.tone(CAMERA_RELEASE,30);
   current_settings = &viewfinder_settings;
   if(!IsSDValid) {resolution_modeset(); RequestFrame(); return;}
-  char filename[256];
-  snprintf(filename, sizeof(filename), "/DCMI/Photo_%u.jpeg", sd_files_amount);
-  current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
-  current_file.write(video_buffer,jpeg_length);
-  current_file.close();
-  update_SD();
+  SDWrite();
   resolution_modeset();
   RequestFrame();
 }
@@ -222,7 +267,7 @@ Ticker camera_poll_ticker(camera_poll,FRAME_TIMEOUT,0,MILLIS);
 
 void CameraTick(){
   if (!is_receiving or at_menu) return;
-  if (frame_state == FRAME_PHOTO_READY) return;
+  if (frame_state == FRAME_SD_LOCK) return;
   while (Serial2.available() > 0) {
   switch (rx_state)
     {
@@ -290,13 +335,15 @@ void button_release(){
 void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
+  xTaskCreatePinnedToCore(SDTask ,"SDHandlerTask",4096,NULL,0,&SDHandlerTask,0);
+
   SPI.begin(SD_SPI_SCK_PIN, SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN, SD_SPI_CS_PIN);
   sd.begin(SD_SPI_CS_PIN, SD_SCK_MHZ(25));
   IsSDValid = (sd.card() != nullptr && sd.card()->errorCode() == 0);
   sd.mkdir("/AppData");
   sd.mkdir("/AppData/Cardmera");
-  sd.mkdir("/DCMI");
-  update_SD();
+  sd.mkdir("/DCIM");
+  update_SD_Count();
   Serial.begin(9600);
   canvas.setBaseColor(BLACK);
   M5Cardputer.Display.setFont(UI_FONT);
