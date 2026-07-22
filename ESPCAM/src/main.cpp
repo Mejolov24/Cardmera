@@ -21,6 +21,12 @@ enum modetype{
   AEC2,
   GAIN_CTRL,
   GAIN_CEILING,
+  AGC_GAIN,
+  DENOISE,
+  RAW_GMA,
+  BPC,
+  WPC,
+  DCW,
   LENS_CORR,
   MIRROR,
   FLIP,
@@ -79,6 +85,12 @@ void modeSet(modetype mode,int8_t value = 0){
   case AEC2: s->set_aec2(s,value); break;
   case GAIN_CTRL: s->set_gain_ctrl(s,value); break;
   case GAIN_CEILING: s->set_gainceiling(s,(gainceiling_t)value); break;
+  case AGC_GAIN:s->set_agc_gain(s, value); break;
+  case DENOISE:s->set_denoise(s, value); break;
+  case RAW_GMA:s->set_raw_gma(s, value); break;
+  case BPC:s->set_bpc(s, value); break;
+  case WPC:s->set_wpc(s, value); break;
+  case DCW:s->set_dcw(s, value); break;
   case LENS_CORR: s->set_lenc(s,value); break;
   case MIRROR: s->set_hmirror(s,value); break;
   case FLIP: s->set_vflip(s,value); break;
@@ -139,7 +151,7 @@ current_config.pin_d0 = 5;
   current_config.jpeg_quality = 12; 
   current_config.pixel_format = PIXFORMAT_JPEG;
   current_config.frame_size = FRAMESIZE_QXGA; // Allocate max size in ram
-  current_config.fb_count = 1;
+  current_config.fb_count = 2;
   previous_fr = FRAMESIZE_QXGA;
   esp_camera_init(&current_config);
   modeSet(FR_SIZE,FRAMESIZE_QQVGA); // step down size

@@ -69,6 +69,12 @@ enum modetype{
   AEC2,
   GAIN_CTRL,
   GAIN_CEILING,
+  AGC_GAIN,
+  DENOISE,
+  RAW_GMA,
+  BPC,
+  WPC,
+  DCW,
   LENS_CORR,
   MIRROR,
   FLIP,
@@ -144,6 +150,12 @@ struct GlobalCameraSettings {
     bool AEC2 = false;
     bool GAIN_CTRL = true;
     int8_t GAIN_CEILING = 0;
+    uint8_t AGC_GAIN = 0;
+    uint8_t DENOISE = 2;
+    bool RAW_GMA = true;
+    bool BPC = true;
+    bool WPC = true;
+    bool DCW = true;
     bool LENS_CORR = true;
     bool MIRROR = false;
     bool FLIP = false;
@@ -170,24 +182,56 @@ M5Menu::MenuItem circuit_bending_items[] = {
     }
 };
 M5Menu::Menu circuit_bending_menu(5,circuit_bending_items);
+extern void modeSetSend(modetype mode,int8_t value);
+void set_FR_SIZE(){modeSetSend(FR_SIZE,viewfinder_settings.FR_SIZE);}
+void set_JPEG_QUALITY(){modeSetSend(JPEG_QUALITY,viewfinder_settings.JPEG_QUALITY);}
+void set_BRIGHTNESS(){modeSetSend(BRIGHTNESS, global_settings.BRIGHTNESS);}
+void set_CONTRAST(){modeSetSend(CONTRAST, global_settings.CONTRAST);}
+void set_SATURATION(){modeSetSend(SATURATION, global_settings.SATURATION);}
+void set_SHARPNESS(){modeSetSend(SHARPNESS, global_settings.SHARPNESS);}
+void set_WB(){modeSetSend(WB, global_settings.WB);}
+void set_WB_MODE(){modeSetSend(WB_MODE, global_settings.WB_MODE);}
+void set_AWB_GAIN(){modeSetSend(AWB_GAIN, global_settings.AWB_GAIN);}
+void set_EXP_CTRL(){modeSetSend(EXP_CTRL, global_settings.EXP_CTRL);}
+void set_AE_LEVEL(){modeSetSend(AE_LEVEL, global_settings.AE_LEVEL);}
+void set_AEC_VALUE(){modeSetSend(AEC_VALUE, global_settings.AEC_VALUE);}
+void set_AEC2(){modeSetSend(AEC2, global_settings.AEC2);}
+void set_GAIN_CTRL(){modeSetSend(GAIN_CTRL, global_settings.GAIN_CTRL);}
+void set_GAIN_CEILING(){modeSetSend(GAIN_CEILING, global_settings.GAIN_CEILING);}
+void set_AGC_GAIN(){ modeSetSend(AGC_GAIN, global_settings.AGC_GAIN);}
+void set_DENOISE(){ modeSetSend(DENOISE, global_settings.DENOISE);}
+void set_RAW_GMA(){ modeSetSend(RAW_GMA, global_settings.RAW_GMA);}
+void set_BPC(){modeSetSend(BPC, global_settings.BPC);}
+void set_WPC(){modeSetSend(WPC, global_settings.WPC);}
+void set_DCW(){modeSetSend(DCW, global_settings.DCW);}
+void set_LENS_CORR(){modeSetSend(LENS_CORR, global_settings.LENS_CORR);}
+void set_MIRROR(){modeSetSend(MIRROR, global_settings.MIRROR);}
+void set_FLIP(){modeSetSend(FLIP, global_settings.FLIP);}
+void set_SPECIAL(){modeSetSend(SPECIAL, global_settings.SPECIAL);}
+
 M5Menu::MenuItem global_settings_items[] = {
-    {"Brightness", &global_settings.BRIGHTNESS, 1, -2, 2},
-    {"Contrast", &global_settings.CONTRAST, 1, -2, 2},
-    {"Saturation", &global_settings.SATURATION, 1, -2, 2},
-    {"Sharpness", &global_settings.SHARPNESS, 1, -2, 2},
-    {"Auto White Balance", &global_settings.WB},
-    {"White Balance Mode", &global_settings.WB_MODE, 1, 0, 4},
-    {"Auto WB Gain", &global_settings.AWB_GAIN},
-    {"Auto Exposure", &global_settings.EXP_CTRL},
-    {"Exposure Bias", &global_settings.AE_LEVEL, 1, -2, 2},
-    {"Exposure Speed", &global_settings.AEC_VALUE, aec_options},
-    {"Enhanced Exposure", &global_settings.AEC2},
-    {"Auto Gain", &global_settings.GAIN_CTRL},
-    {"Max Gain", &global_settings.GAIN_CEILING},
-    {"Lens Correction", &global_settings.LENS_CORR},
-    {"Mirror Image", &global_settings.MIRROR},
-    {"Flip Image", &global_settings.FLIP},
-    {"Color Effect", &global_settings.SPECIAL, 1, 0, 6},
+    {"Brightness", &global_settings.BRIGHTNESS, 1, -2, 2, set_BRIGHTNESS},
+    {"Contrast", &global_settings.CONTRAST, 1, -2, 2, set_CONTRAST},
+    {"Saturation", &global_settings.SATURATION, 1, -2, 2, set_SATURATION},
+    {"Sharpness", &global_settings.SHARPNESS, 1, -2, 2, set_SHARPNESS},
+    {"Auto White Balance", &global_settings.WB, set_WB},
+    {"White Balance Mode", &global_settings.WB_MODE, 1, 0, 4, set_WB_MODE},
+    {"Auto WB Gain", &global_settings.AWB_GAIN, set_AWB_GAIN},
+    {"Auto Exposure", &global_settings.EXP_CTRL, set_EXP_CTRL},
+    {"Exposure Bias", &global_settings.AE_LEVEL, 1, -2, 2, set_AE_LEVEL},
+    {"Exposure Speed", &global_settings.AEC_VALUE, aec_options, set_AEC_VALUE},
+    {"Enhanced Exposure", &global_settings.AEC2, set_AEC2},
+    {"Auto Gain", &global_settings.GAIN_CTRL, set_GAIN_CTRL},
+    {"Manual Gain",&global_settings.AGC_GAIN,1,0,30, set_AGC_GAIN},
+    {"Gain Ceiling", &global_settings.GAIN_CEILING, 1, 0, 6, set_GAIN_CEILING},
+    {"Denoise",&global_settings.DENOISE,1,0,8, set_DENOISE},
+    {"Bad Pixel Correction",&global_settings.BPC, set_BPC},
+    {"Lens Correction", &global_settings.LENS_CORR, set_LENS_CORR},
+    {"White Pixel Correction",&global_settings.WPC, set_WPC},
+    {"Downsampling",&global_settings.DCW, set_DCW},
+    {"Mirror Image", &global_settings.MIRROR, set_MIRROR},
+    {"Flip Image", &global_settings.FLIP, set_FLIP},
+    {"Color Effect", &global_settings.SPECIAL, 1, 0, 6, set_SPECIAL},
     {"Circuit Bending",&circuit_bending_menu}
 };
 M5Menu::Menu global_menu_settings(4,global_settings_items);
@@ -241,14 +285,16 @@ M5Menu::MenuItem viewfinder_settings_items[] = {
     {
         "Resolution",
         &viewfinder_settings.FR_SIZE,
-        resolutions
+        resolutions,
+        set_FR_SIZE
     },
     {
         "JPEG Quality",
         &viewfinder_settings.JPEG_QUALITY,
         1,
         0,
-        63
+        63,
+        set_JPEG_QUALITY
     },
     
 };

@@ -29,7 +29,6 @@ const unsigned long FRAME_TIMEOUT = 500;
 uint8_t frame_await_queque = 0;
 
 bool at_menu = false;
-bool pending_modeset = false;
 bool holding_shutter = false;
 bool IsSDValid = true;
 bool out_of_memory = false;
@@ -47,7 +46,15 @@ Serial2.write(mode);
 Serial2.write(static_cast<uint8_t>(value));
 }
 
-void apply_modeset(){
+void resolution_modeset(){
+  rx_state = WAIT_SYNC_1;
+  frame_bytes_read=0;
+  while (Serial2.available()) {Serial2.read();}
+  modeSetSend(FR_SIZE,current_settings->FR_SIZE);
+  modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
+}
+
+void force_modeset(){
   // discard old camera data
   rx_state = WAIT_SYNC_1;
   frame_bytes_read=0;
@@ -66,16 +73,21 @@ void apply_modeset(){
   modeSetSend(AEC_VALUE,static_cast<int8_t>(aec_map[global_settings.AEC_VALUE]));
   modeSetSend(AEC2,global_settings.AEC2);
   modeSetSend(GAIN_CTRL,global_settings.GAIN_CTRL);
-  modeSetSend(GAIN_CEILING,global_settings.GAIN_CEILING);
+  modeSetSend(AGC_GAIN,global_settings.AGC_GAIN);
+  if(global_settings.GAIN_CEILING != 0) modeSetSend(GAIN_CEILING,global_settings.GAIN_CEILING);
+  modeSetSend(AGC_GAIN,global_settings.AGC_GAIN);
+  modeSetSend(DENOISE,global_settings.DENOISE);
+  modeSetSend(RAW_GMA,global_settings.RAW_GMA);
+  modeSetSend(BPC,global_settings.BPC);
+  modeSetSend(WPC,global_settings.WPC);
+  modeSetSend(DCW,global_settings.DCW);
   modeSetSend(LENS_CORR,global_settings.LENS_CORR);
   modeSetSend(MIRROR,global_settings.MIRROR);
   modeSetSend(FLIP,global_settings.FLIP);
   modeSetSend(SPECIAL,global_settings.SPECIAL);
-  if (frame_state != FRAME_PHOTO_READY) modeSetSend(REQUEST_FRAME);
 }
 
 void OnUsage(M5Menu::MenuItem* item, M5Menu::Menu* menu){
-    if (menu->id == 1 or menu->id == 4){pending_modeset = true;}
     }
 
 void OnKey(uint8_t key, bool pressed){
@@ -175,14 +187,15 @@ void take_photo(){
   frame_await_queque = 0;
   M5Cardputer.Speaker.tone(CAMERA_RELEASE,30);
   current_settings = &viewfinder_settings;
-  if(!IsSDValid) {apply_modeset(); return;}
+  if(!IsSDValid) {resolution_modeset(); RequestFrame(); return;}
   char filename[256];
   snprintf(filename, sizeof(filename), "/DCMI/Photo_%u.jpeg", sd_files_amount);
   current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
   current_file.write(video_buffer,jpeg_length);
   current_file.close();
   update_SD();
-  apply_modeset();
+  resolution_modeset();
+  RequestFrame();
 }
 
 void camera_poll(){
@@ -201,7 +214,6 @@ void camera_poll(){
       canvas.setTextColor(ORANGE,BLACK);
       canvas.drawString("No video",M5.Display.width()/2,M5.Display.height()/2);
     }
-    pending_modeset = true;
     if (at_menu) return;
     render();
   }
@@ -210,7 +222,7 @@ Ticker camera_poll_ticker(camera_poll,FRAME_TIMEOUT,0,MILLIS);
 
 void CameraTick(){
   if (!is_receiving or at_menu) return;
-  if (pending_modeset and !at_menu){ apply_modeset(); pending_modeset = false;}
+  if (frame_state == FRAME_PHOTO_READY) return;
   while (Serial2.available() > 0) {
   switch (rx_state)
     {
@@ -249,9 +261,9 @@ void CameraTick(){
         if (frame_state == FRAME_WAITING_PHOTO){
           frame_await_queque ++;
           if(frame_await_queque >= global_settings.frame_await) frame_state = FRAME_PHOTO_READY;
+          break;
         }
-        rx_state = WAIT_SYNC_1;
-        modeSetSend(REQUEST_FRAME);
+        RequestFrame();
         render();
         break;
     }
@@ -265,7 +277,7 @@ void CameraTick(){
 void button_press(){
   M5Cardputer.Speaker.tone(CAMERA_PRESS,30);
   current_settings = &photo_settings;
-  apply_modeset();
+  resolution_modeset();
   frame_await_queque = 0;
   holding_shutter = true;
 }
@@ -297,14 +309,14 @@ void setup() {
   g0Button.attachLongPressStop(button_release);
   keyHandler.SetupKeyboardCallback(OnKey);
 
-  menu.begin(&canvas,OnUsage);
+  menu.begin(&canvas,render,OnUsage);
   menu.setTheme(&theme);
   menu.goToMenu(&main_menu);
 
   M5Cardputer.Speaker.tone(BEEP_1,100);
   delay(100);
   M5Cardputer.Speaker.tone(BEEP_2,100);
-  apply_modeset();
+  force_modeset();
   RequestFrame();
 
 }
