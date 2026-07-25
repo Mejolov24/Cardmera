@@ -7,9 +7,9 @@
 #define SD_SPI_MOSI_PIN 14
 #define SD_SPI_CS_PIN   12
 
-#define BEEP_1 1318.51
-#define BEEP_2 1046.50
-#define BEEP_3 261.625
+#define BEEP_1 1046.50
+#define BEEP_2 1318.51
+#define BEEP_3 1567.98
 #define CAMERA_PRESS 4000
 #define CAMERA_RELEASE 4000
 
