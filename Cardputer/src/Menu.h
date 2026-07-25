@@ -9,6 +9,7 @@
 
 #define BEEP_1 1318.51
 #define BEEP_2 1046.50
+#define BEEP_3 261.625
 #define CAMERA_PRESS 4000
 #define CAMERA_RELEASE 4000
 
@@ -162,6 +163,7 @@ struct GlobalCameraSettings {
     int8_t SPECIAL = 0;
     uint8_t frame_await = 0;
     bool direct_write = false;
+    uint8_t volume = 100;
 
     bool invert_rgb = false;
     bool invert_endians = false;
@@ -208,7 +210,7 @@ void set_LENS_CORR(){modeSetSend(LENS_CORR, global_settings.LENS_CORR);}
 void set_MIRROR(){modeSetSend(MIRROR, global_settings.MIRROR);}
 void set_FLIP(){modeSetSend(FLIP, global_settings.FLIP);}
 void set_SPECIAL(){modeSetSend(SPECIAL, global_settings.SPECIAL);}
-
+void set_volume(){M5Cardputer.Speaker.setAllChannelVolume(static_cast<uint8_t>((global_settings.volume * 255) / 100));}
 M5Menu::MenuItem global_settings_items[] = {
     {"Brightness", &global_settings.BRIGHTNESS, 1, -2, 2, set_BRIGHTNESS},
     {"Contrast", &global_settings.CONTRAST, 1, -2, 2, set_CONTRAST},
@@ -232,6 +234,7 @@ M5Menu::MenuItem global_settings_items[] = {
     {"Mirror Image", &global_settings.MIRROR, set_MIRROR},
     {"Flip Image", &global_settings.FLIP, set_FLIP},
     {"Color Effect", &global_settings.SPECIAL, 1, 0, 6, set_SPECIAL},
+    {"Volume",&global_settings.volume,10,0,100,set_volume},
     {"Circuit Bending",&circuit_bending_menu}
 };
 M5Menu::Menu global_menu_settings(4,global_settings_items);
