@@ -158,7 +158,7 @@ struct GlobalCameraSettings {
     bool WPC = true;
     bool DCW = true;
     bool LENS_CORR = true;
-    bool MIRROR = false;
+    bool MIRROR = true;
     bool FLIP = false;
     int8_t SPECIAL = 0;
     uint8_t frame_await = 0;

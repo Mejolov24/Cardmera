@@ -16,59 +16,67 @@ M5Menu menu;
 M5Canvas canvas(&M5.Lcd);
 M5Canvas sprite_buffer(&canvas);
 
+enum SDState{
+  SD_NONE,
+  SD_NORMAL,
+  SD_BUSY
+};
+enum FlashState {
+  FLASH_OFF,
+  FLASH_ON,
+  FLASH_TORCH,
+};
+enum FrameState {
+  FRAME_DISABLED,
+  FRAME_NORMAL,
+  FRAME_AWAIT_PHOTO,
+};
+enum Mode{
+  MODE_PHOTO,
+  MODE_VIDEO
+};
+
 ReceiveState rx_state = WAIT_SYNC_1;
 uint32_t jpeg_length = 0;
 uint32_t frame_bytes_read = 0;
 
 #define MAX_IMG_SIZE 150000
-#define BUFFER_A_START 0
-#define BUFFER_A_END ((MAX_IMG_SIZE - 1) /2)
-#define BUFFER_B_START ((MAX_IMG_SIZE) /2)
-#define BUFFER_B_END MAX_IMG_SIZE
-#define BUFFER_A 0
-#define BUFFER_B 1
+#define HALF_BUFFER ((MAX_IMG_SIZE) /2)
 #define ACTION_WRITE_SD_BUFFER 1
 #define ACTION_WRITE_SD_BUFFER_A 2
 #define ACTION_WRITE_SD_BUFFER_B 3
 uint8_t video_buffer[MAX_IMG_SIZE];
-bool current_buffer = 0;
+
+class Buffer{
+  public:
+  uint8_t* memory = nullptr;
+  uint32_t size = 0;
+  uint32_t start = 0;
+  uint32_t end = 0;
+  uint32_t head = 0;
+  Buffer(uint8_t* mem, uint32_t size_, int32_t start_, int32_t end_) : memory(mem), size(size_), start(start_), end(end_) {}
+};
+Buffer Buffer_A(video_buffer,HALF_BUFFER - 1, 0, HALF_BUFFER);
+Buffer Buffer_B(video_buffer + HALF_BUFFER,HALF_BUFFER, 0, MAX_IMG_SIZE);
+Buffer Buffers[2] = {Buffer_A, Buffer_B};
+
 unsigned long lastFrameTime = 0;
-const unsigned long FRAME_TIMEOUT = 500;
+const unsigned long FRAME_TIMEOUT = 2000;
 uint8_t frame_await_queque = 0;
 
 bool at_menu = false;
 bool holding_shutter = false;
 bool out_of_memory = false;
 bool battery_charging;
+volatile bool current_buffer = 0;
+volatile bool DW_Done = false;
+volatile SDState sd_state = SD_NONE;
+volatile FrameState _frame_state = FRAME_NORMAL;
 int32_t battery_level = 0;
 uint16_t sd_files_amount = 0;
 localCameraSettings* current_settings = &viewfinder_settings;
 TaskHandle_t SDHandlerTask;
-
-enum SDState{
-  SD_NONE,
-  SD_NORMAL,
-  SD_BUSY
-};
-SDState sd_state = SD_NONE;
-
-enum FlashState {
-  FLASH_OFF,
-  FLASH_ON,
-  FLASH_TORCH,
-};
 uint8_t _flash_state = FLASH_OFF;
-
-enum FrameState {
-  FRAME_DISABLED,
-  FRAME_NORMAL,
-  FRAME_AWAIT_PHOTO,
-};
-FrameState _frame_state = FRAME_NORMAL;
-enum Mode{
-  MODE_PHOTO,
-  MODE_VIDEO
-};
 Mode current_mode = MODE_PHOTO;
 bool at_viewfinder = true;
 void modeSetSend(modetype mode,int8_t value = 0){
@@ -106,26 +114,21 @@ void SetFlash(uint8_t value = 255){
   }
 }
 
+void StopFrame(){
+  rx_state = WAIT_SYNC_1;
+  frame_bytes_read = 0;
+  while (Serial2.available()) {Serial2.read();}
+}
+
 void SetFrameState(FrameState state){
   _frame_state = state;
-  switch (state)
-  {
-  case FRAME_DISABLED:
-    rx_state = WAIT_SYNC_1;
-    frame_bytes_read = 0;
-    while (Serial2.available()) {Serial2.read();}
-    break;
-  
-  default:
-    break;
-  }
 }
 
 void resolution_modeset(localCameraSettings* mode){
   if(mode == &viewfinder_settings){at_viewfinder = true;}
   else{at_viewfinder = false;}
   current_settings = mode;
-  SetFrameState(FRAME_DISABLED);
+  StopFrame();
   modeSetSend(FR_SIZE,current_settings->FR_SIZE);
   modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
   SetFrameState(FRAME_NORMAL);
@@ -134,7 +137,7 @@ void resolution_modeset(localCameraSettings* mode){
 
 void force_modeset(){
   // discard old camera data
-  SetFrameState(FRAME_DISABLED);
+  StopFrame();
   modeSetSend(FR_SIZE,current_settings->FR_SIZE);
   modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
   modeSetSend(BRIGHTNESS,global_settings.BRIGHTNESS);
@@ -234,26 +237,28 @@ void SDTask(void *pvParameters){
         default: break;
         }
 
-        switch (notificationValue)
-        {
         
-        case ACTION_WRITE_SD_BUFFER:{
+        if(global_settings.direct_write){
+          if (!current_file.isOpen()) {current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);}
+            current_file.write(Buffers[!current_buffer].memory, Buffers[!current_buffer].head);
+            current_file.close();
+            Buffers[!current_buffer].head = 0;
+            if(DW_Done){
+              sd_state = SD_NORMAL;
+              DW_Done = false;
+              Buffers[0].head = 0;
+              Buffers[1].head = 0;
+              update_SD_Count();
+              resolution_modeset(&viewfinder_settings);
+            }
+        }
+        else{
             current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
             current_file.write(video_buffer,jpeg_length);
             current_file.close();
-            update_SD_Count();
-            SetFrameState(FRAME_NORMAL);
-            RequestFrame();
             sd_state = SD_NORMAL;
-        }
-          break;
-
-        case ACTION_WRITE_SD_BUFFER_A:
-          break;
-        case ACTION_WRITE_SD_BUFFER_B:
-          break;
-        
-        default: break;
+            update_SD_Count();
+            resolution_modeset(&viewfinder_settings);
         }
       }
   }
@@ -261,11 +266,32 @@ void SDTask(void *pvParameters){
 
 void SDWrite(){
   sd_state = SD_BUSY;
-  SetFrameState(FRAME_DISABLED);
-  if(global_settings.direct_write){}
-  else{xTaskNotify(SDHandlerTask, ACTION_WRITE_SD_BUFFER, eSetValueWithOverwrite);}
+  if(!global_settings.direct_write){StopFrame();}
+  xTaskNotifyGive(SDHandlerTask);
 }
 
+void HandleBuffering(){
+  int bytes_available = Serial2.available();
+  int bytes_to_read = min(bytes_available, (int)(jpeg_length - frame_bytes_read));
+  if (global_settings.direct_write and _frame_state == FRAME_DISABLED){
+    Serial2.readBytes(&Buffers[current_buffer].memory[Buffers[current_buffer].head], bytes_to_read);
+    Buffers[current_buffer].head += bytes_to_read;
+    if (frame_bytes_read + bytes_to_read >= jpeg_length){
+      DW_Done = true;
+      current_buffer = !current_buffer;
+      SDWrite();
+    }
+    if (Buffers[current_buffer].head >= Buffers[current_buffer].size){ // this
+      current_buffer = !current_buffer;
+      SDWrite();
+      return;
+    }
+  }
+  else{
+   Serial2.readBytes(&video_buffer[frame_bytes_read], bytes_to_read);
+  }
+  frame_bytes_read += bytes_to_read;
+}
 
 void renderStatic() {
   Resolution r = frameSizes[current_settings->FR_SIZE];
@@ -328,13 +354,11 @@ void render(){
 
 void take_photo(){
   if(_flash_state == FLASH_ON) modeSetSend(FLASH,0);
-  SetFrameState(FRAME_NORMAL);
+  SetFrameState(FRAME_DISABLED);
   frame_await_queque = 0;
   M5Cardputer.Speaker.tone(CAMERA_RELEASE,30);
   if(sd_state == SD_NONE) {resolution_modeset(&viewfinder_settings); return;}
-  if(global_settings.direct_write){SetFrameState(FRAME_DISABLED);}
   SDWrite();
-  resolution_modeset(&viewfinder_settings);
 }
 
 void camera_poll(){
@@ -354,6 +378,7 @@ void camera_poll(){
 Ticker camera_poll_ticker(camera_poll,FRAME_TIMEOUT,0,MILLIS);
 
 void OOM(){
+  if(global_settings.direct_write) return;
   if(_flash_state == FLASH_ON) modeSetSend(FLASH,0);
   canvas.setTextDatum(middle_center);
   canvas.setTextColor(RED,BLACK);
@@ -371,7 +396,7 @@ void OOM(){
 
 void CameraTick(){
   if (at_menu) return;
-  if (_frame_state == FRAME_DISABLED) return;
+  if (_frame_state == FRAME_DISABLED and !global_settings.direct_write) return;
   while (Serial2.available() > 0) {
   switch (rx_state)
     {
@@ -388,11 +413,8 @@ void CameraTick(){
       }
       break;
     }
-    case READ_PAYLOAD:{   
-        int bytes_available = Serial2.available();
-        int bytes_to_read = min(bytes_available, (int)(jpeg_length - frame_bytes_read));
-        Serial2.readBytes(&video_buffer[frame_bytes_read], bytes_to_read);
-        frame_bytes_read += bytes_to_read;
+    case READ_PAYLOAD:{
+        HandleBuffering();
         lastFrameTime = millis();
         if (frame_bytes_read < jpeg_length) return;
 
@@ -423,7 +445,7 @@ void CameraTick(){
 
 void button_press(){
   M5Cardputer.Speaker.tone(CAMERA_PRESS,30);
-  if(!global_settings.direct_write) resolution_modeset(&photo_settings);
+  resolution_modeset(&photo_settings);
   if(_flash_state == FLASH_ON) modeSetSend(FLASH,1);
   frame_await_queque = 0;
   holding_shutter = true;
