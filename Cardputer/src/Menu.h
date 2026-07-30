@@ -185,6 +185,7 @@ M5Menu::MenuItem circuit_bending_items[] = {
 };
 M5Menu::Menu circuit_bending_menu(5,circuit_bending_items);
 extern void modeSetSend(modetype mode,int8_t value);
+extern void set_charging(bool state);
 void set_FR_SIZE(){modeSetSend(FR_SIZE,viewfinder_settings.FR_SIZE);}
 void set_JPEG_QUALITY(){modeSetSend(JPEG_QUALITY,viewfinder_settings.JPEG_QUALITY);}
 void set_BRIGHTNESS(){modeSetSend(BRIGHTNESS, global_settings.BRIGHTNESS);}
@@ -211,6 +212,7 @@ void set_MIRROR(){modeSetSend(MIRROR, global_settings.MIRROR);}
 void set_FLIP(){modeSetSend(FLIP, global_settings.FLIP);}
 void set_SPECIAL(){modeSetSend(SPECIAL, global_settings.SPECIAL);}
 void set_volume(){M5Cardputer.Speaker.setAllChannelVolume(static_cast<uint8_t>((global_settings.volume * 255) / 100));}
+void charging_mode(){set_charging(true);}
 M5Menu::MenuItem global_settings_items[] = {
     {"Brightness", &global_settings.BRIGHTNESS, 1, -2, 2, set_BRIGHTNESS},
     {"Contrast", &global_settings.CONTRAST, 1, -2, 2, set_CONTRAST},
@@ -318,6 +320,10 @@ M5Menu::MenuItem main_menu_items[] = {
     {
         "Global Settings",
         &global_menu_settings
+    },
+    {
+        "Charging Mode",
+        &charging_mode
     }
     
 };

@@ -94,6 +94,15 @@ Serial2.write(mode);
 Serial2.write(static_cast<uint8_t>(value));
 }
 
+void set_charging(bool state){
+  if (state){
+    M5Cardputer.Display.setBrightness(0);
+  }
+  else{
+    M5Cardputer.Display.setBrightness(255);
+  }
+}
+
 void RequestFrame(){
   rx_state = WAIT_SYNC_1;
   frame_bytes_read = 0;
@@ -222,10 +231,10 @@ void render(){
   case SD_NORMAL: render_sprite(SPRITE_SD_NORMAL,224,0); break;
   default: break;
   }
-  if(battery_level < 100 and battery_level > 80){render_sprite(SPRITE_BATTERY + 1,224,16);}
-  if(battery_level < 80 and battery_level > 60){render_sprite(SPRITE_BATTERY + 2,224,16);}
-  if(battery_level < 60 and battery_level > 40){render_sprite(SPRITE_BATTERY + 3,224,16);}
-  if(battery_level < 40 and battery_level > 20){render_sprite(SPRITE_BATTERY + 4,224,16);}
+  if(battery_level <= 100 and battery_level >= 80){render_sprite(SPRITE_BATTERY + 1,224,16);}
+  if(battery_level < 80 and battery_level >= 60){render_sprite(SPRITE_BATTERY + 2,224,16);}
+  if(battery_level < 60 and battery_level >= 40){render_sprite(SPRITE_BATTERY + 3,224,16);}
+  if(battery_level < 40 and battery_level >= 20){render_sprite(SPRITE_BATTERY + 4,224,16);}
   if(battery_level < 20){render_sprite(SPRITE_BATTERY + 5,224,16);}
   if(global_settings.direct_write){render_sprite(SPRITE_DIRECT_WRITE,224,119);}
 
@@ -266,7 +275,7 @@ void OnKey(uint8_t key, bool pressed){
     default:
         break;
   }
-  render();
+  if(!at_menu) render();
 }
 
 void update_SD_Count(){
@@ -393,6 +402,7 @@ void CameraTick(){
   if(at_menu) return;
   if (millis() - lastFrameTime > FRAME_TIMEOUT){
     RequestFrame();
+    force_modeset();
     Static();
     canvas.setFont(NO_SIGNAL_FONT);
     canvas.setTextDatum(middle_center);
