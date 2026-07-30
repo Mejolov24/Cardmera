@@ -14,8 +14,8 @@ uint32_t fast_noise() {
 
 void invert_rgb() {
   uint16_t* pixels = (uint16_t*)canvas.getBuffer();
-  for (int y = canvas_state.render_x; y < canvas_state.render_y + canvas_state.resolution.h; y++) {
-    for (int x = canvas_state.render_x; x < canvas_state.render_y + canvas_state.resolution.w; x++) {
+  for (int y = canvas_state.render_y; y < canvas_state.render_y + canvas_state.render_h; y++) {
+      for (int x = canvas_state.render_x; x < canvas_state.render_x + canvas_state.render_w; x++) {
 
       int i = y * canvas.width() + x;
 
@@ -33,8 +33,8 @@ void invert_rgb() {
 
 void Static() {
   uint16_t* pixels = (uint16_t*)canvas.getBuffer();
-  for (int y = canvas_state.render_x; y < canvas_state.render_y + canvas_state.resolution.h; y++) {
-    for (int x = canvas_state.render_x; x < canvas_state.render_y + canvas_state.resolution.w; x++) {
+  for (int y = canvas_state.render_y; y < canvas_state.render_y + canvas_state.render_h; y++) {
+      for (int x = canvas_state.render_x; x < canvas_state.render_x + canvas_state.render_w; x++) {
       uint16_t color = (fast_noise() & 0x1) ? 0xFFFF : 0x0000;
       int offset = y * canvas.width() + x;
       pixels[offset] = color;
@@ -44,8 +44,8 @@ void Static() {
 
 void invert_endians() {
   uint16_t* pixels = (uint16_t*)canvas.getBuffer();
-  for (int y = canvas_state.render_x; y < canvas_state.render_y + canvas_state.resolution.h; y++) {
-    for (int x = canvas_state.render_x; x < canvas_state.render_y + canvas_state.resolution.w; x++) {
+  for (int y = canvas_state.render_y; y < canvas_state.render_y + canvas_state.render_h; y++) {
+      for (int x = canvas_state.render_x; x < canvas_state.render_x + canvas_state.render_w; x++) {
 
       int offset = y * canvas.width() + x;
 

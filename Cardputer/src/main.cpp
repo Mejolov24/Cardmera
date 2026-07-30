@@ -17,6 +17,8 @@ M5Canvas sprite_buffer(&canvas);
 struct Canvas_State{
   Resolution resolution;
   float resolution_scale = 0;
+  uint32_t render_w = 0;
+  uint32_t render_h = 0;
   uint32_t render_x = 0;
   uint32_t render_y = 0;
 };
@@ -130,16 +132,22 @@ void SetFrameState(FrameState state){
   _frame_state = state;
 }
 
+void setup_canvas_state(){
+  canvas_state.resolution = frameSizes[current_settings->FR_SIZE];
+  canvas_state.resolution_scale = min((float)canvas.width() / canvas_state.resolution.w, (float)canvas.height() / canvas_state.resolution.h);
+  canvas_state.render_h = static_cast<uint32_t>(canvas_state.resolution.h * canvas_state.resolution_scale);
+  canvas_state.render_w = static_cast<uint32_t>(canvas_state.resolution.w * canvas_state.resolution_scale);
+  canvas_state.render_x = (canvas.width() - canvas_state.render_w) / 2;
+  canvas_state.render_y = (canvas.height() - canvas_state.render_h) / 2;
+}
+
 void resolution_modeset(localCameraSettings* mode){
   if(mode == &viewfinder_settings){at_viewfinder = true;}
   else{at_viewfinder = false;}
   current_settings = mode;
   StopFrame();
 
-  canvas_state.resolution = frameSizes[current_settings->FR_SIZE];
-  canvas_state.resolution_scale = min((float)canvas.width() / canvas_state.resolution.w, (float)canvas.height() / canvas_state.resolution.h);
-  canvas_state.render_x = (canvas.width() - (canvas_state.resolution.w * canvas_state.resolution_scale)) / 2;
-  canvas_state.render_y = (canvas.height() - (canvas_state.resolution.h * canvas_state.resolution_scale)) / 2;
+  setup_canvas_state();
 
   modeSetSend(FR_SIZE,current_settings->FR_SIZE);
   modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
@@ -179,10 +187,7 @@ void force_modeset(){
   SetFrameState(FRAME_NORMAL);
   RequestFrame();
 
-  canvas_state.resolution = frameSizes[current_settings->FR_SIZE];
-  canvas_state.resolution_scale = min((float)canvas.width() / canvas_state.resolution.w, (float)canvas.height() / canvas_state.resolution.h);
-  canvas_state.render_x = (canvas.width() - (canvas_state.resolution.w * canvas_state.resolution_scale)) / 2;
-  canvas_state.render_y = (canvas.height() - (canvas_state.resolution.h * canvas_state.resolution_scale)) / 2;
+  setup_canvas_state();
 
 }
 
