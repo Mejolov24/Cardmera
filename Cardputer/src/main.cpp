@@ -4,9 +4,7 @@
 #include <M5Menu.h>
 #include <Menu.h>
 #include <OneButton.h>
-#include <Ticker.h>
 #include <SdFat.h>
-#include <effects.h>
 #include <sprites.h>
 SdFat sd;
 FsFile current_file;
@@ -15,6 +13,14 @@ M5CADVKeyCB keyHandler;
 M5Menu menu;
 M5Canvas canvas(&M5.Lcd);
 M5Canvas sprite_buffer(&canvas);
+
+struct Canvas_State{
+  Resolution resolution;
+  float resolution_scale = 0;
+  uint32_t render_x = 0;
+  uint32_t render_y = 0;
+};
+#include <effects.h>
 
 enum SDState{
   SD_NONE,
@@ -35,6 +41,7 @@ enum Mode{
   MODE_PHOTO,
   MODE_VIDEO
 };
+Canvas_State canvas_state = {};
 
 ReceiveState rx_state = WAIT_SYNC_1;
 uint32_t jpeg_length = 0;
@@ -99,7 +106,6 @@ void SetFlash(uint8_t value = 255){
   case FLASH_OFF:
     modeSetSend(FLASH,0);
     M5Cardputer.Speaker.tone(BEEP_1 ,100);
-    // TODO draw UI
     break;
   case FLASH_ON:
     M5Cardputer.Speaker.tone(BEEP_2,100);
@@ -129,6 +135,12 @@ void resolution_modeset(localCameraSettings* mode){
   else{at_viewfinder = false;}
   current_settings = mode;
   StopFrame();
+
+  canvas_state.resolution = frameSizes[current_settings->FR_SIZE];
+  canvas_state.resolution_scale = min((float)canvas.width() / canvas_state.resolution.w, (float)canvas.height() / canvas_state.resolution.h);
+  canvas_state.render_x = (canvas.width() - (canvas_state.resolution.w * canvas_state.resolution_scale)) / 2;
+  canvas_state.render_y = (canvas.height() - (canvas_state.resolution.h * canvas_state.resolution_scale)) / 2;
+
   modeSetSend(FR_SIZE,current_settings->FR_SIZE);
   modeSetSend(JPEG_QUALITY,current_settings->JPEG_QUALITY);
   SetFrameState(FRAME_NORMAL);
@@ -166,152 +178,16 @@ void force_modeset(){
   modeSetSend(SPECIAL,global_settings.SPECIAL);
   SetFrameState(FRAME_NORMAL);
   RequestFrame();
+
+  canvas_state.resolution = frameSizes[current_settings->FR_SIZE];
+  canvas_state.resolution_scale = min((float)canvas.width() / canvas_state.resolution.w, (float)canvas.height() / canvas_state.resolution.h);
+  canvas_state.render_x = (canvas.width() - (canvas_state.resolution.w * canvas_state.resolution_scale)) / 2;
+  canvas_state.render_y = (canvas.height() - (canvas_state.resolution.h * canvas_state.resolution_scale)) / 2;
+
 }
 
 void OnUsage(M5Menu::MenuItem* item, M5Menu::Menu* menu){
     }
-
-void OnKey(uint8_t key, bool pressed){
-  Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
-  if (status.opt){
-    at_menu = !at_menu;
-    at_menu ? menu.open() : menu.close();
-  }
-  if (status.del){menu.process_input(M5Menu::Input::BACK);}
-  if (status.enter) menu.process_input(M5Menu::Input::SELECT);
-  if(!pressed) return;
-  switch (key){
-
-    case 53: // escape
-    SetFlash();
-    break;
-    
-    case 51:
-        menu.process_input(M5Menu::Input::UP);
-        break;
-    case 55:
-        menu.process_input(M5Menu::Input::DOWN);
-        break;
-
-    case 54:
-    menu.process_input(M5Menu::Input::LEFT);
-    break;
-
-    case 56:
-    menu.process_input(M5Menu::Input::RIGHT);
-    break;
-
-    default:
-        break;
-  }
-}
-
-void update_SD_Count(){
-  if(sd_state == SD_NONE) return;
-  sd_files_amount = 0;
-  FsFile root;
-  FsFile file;
-
-  if (!root.open("/DCMI")) return;
-
-  while (file.openNext(&root, O_RDONLY)) {
-    if (!file.isDir()) {
-        sd_files_amount++;
-    }
-    file.close();
-  }
-  root.close();
-}
-
-void SDTask(void *pvParameters){
-  uint32_t notificationValue = 0;
-  char filename[256];
-  for(;;){
-      if (xTaskNotifyWait(0x00, 0xFFFFFFFF, &notificationValue, portMAX_DELAY) == pdPASS) {
-        switch (current_mode)
-        {
-        case MODE_PHOTO:
-        snprintf(filename, sizeof(filename), "/DCMI/Photo_%u.jpeg", sd_files_amount);
-          break;
-        
-        default: break;
-        }
-
-        
-        if(global_settings.direct_write){
-          if (!current_file.isOpen()) {current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);}
-            current_file.write(Buffers[!current_buffer].memory, Buffers[!current_buffer].head);
-            current_file.close();
-            Buffers[!current_buffer].head = 0;
-            if(DW_Done){
-              sd_state = SD_NORMAL;
-              DW_Done = false;
-              Buffers[0].head = 0;
-              Buffers[1].head = 0;
-              update_SD_Count();
-              resolution_modeset(&viewfinder_settings);
-            }
-        }
-        else{
-            current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
-            current_file.write(video_buffer,jpeg_length);
-            current_file.close();
-            sd_state = SD_NORMAL;
-            update_SD_Count();
-            resolution_modeset(&viewfinder_settings);
-        }
-      }
-  }
-}
-
-void SDWrite(){
-  sd_state = SD_BUSY;
-  if(!global_settings.direct_write){StopFrame();}
-  xTaskNotifyGive(SDHandlerTask);
-}
-
-void HandleBuffering(){
-  int bytes_available = Serial2.available();
-  int bytes_to_read = min(bytes_available, (int)(jpeg_length - frame_bytes_read));
-  if (global_settings.direct_write and _frame_state == FRAME_DISABLED){
-    Serial2.readBytes(&Buffers[current_buffer].memory[Buffers[current_buffer].head], bytes_to_read);
-    Buffers[current_buffer].head += bytes_to_read;
-    if (frame_bytes_read + bytes_to_read >= jpeg_length){
-      DW_Done = true;
-      current_buffer = !current_buffer;
-      SDWrite();
-    }
-    if (Buffers[current_buffer].head >= Buffers[current_buffer].size){ // this
-      current_buffer = !current_buffer;
-      SDWrite();
-      return;
-    }
-  }
-  else{
-   Serial2.readBytes(&video_buffer[frame_bytes_read], bytes_to_read);
-  }
-  frame_bytes_read += bytes_to_read;
-}
-
-void renderStatic() {
-  Resolution r = frameSizes[current_settings->FR_SIZE];
-  float scale = min((float)canvas.width() / r.w, (float)canvas.height() / r.h);
-  int x_offset = (canvas.width() - (r.w * scale)) / 2;
-  int y_offset = (canvas.height() - (r.h * scale)) / 2;
-  int targetW = (int)(r.w * scale);
-  int targetH = (int)(r.h * scale);
-  uint16_t* buffer = (uint16_t*)video_buffer;
-  for (int y = 0; y < targetH; y += 2){
-    for (int x = 0; x < targetW; x += 2){
-      uint16_t color = (fast_noise() & 0x1) ? 0xFFFF : 0x0000;
-      buffer[y * targetW + x] = color;
-      buffer[y * targetW + x + 1] = color;
-      buffer[(y + 1) * targetW + x] = color;
-      buffer[(y + 1) * targetW + x + 1] = color;
-    }
-  }
-  canvas.pushImage(x_offset, y_offset, targetW, targetH, buffer);
-}
 
 void render_sprite(uint8_t sprite_id,uint16_t pos_X,uint16_t pos_Y){
   uint16_t sprite_w = 16;
@@ -352,6 +228,133 @@ void render(){
   canvas.clear();
 }
 
+void OnKey(uint8_t key, bool pressed){
+  Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+  if (status.opt){
+    at_menu = !at_menu;
+    at_menu ? menu.open() : menu.close();
+  }
+  if (status.del){menu.process_input(M5Menu::Input::BACK);}
+  if (status.enter) menu.process_input(M5Menu::Input::SELECT);
+  if(!pressed) return;
+  switch (key){
+
+    case 53: // escape
+    SetFlash();
+    break;
+    
+    case 51:
+        menu.process_input(M5Menu::Input::UP);
+        break;
+    case 55:
+        menu.process_input(M5Menu::Input::DOWN);
+        break;
+
+    case 54:
+    menu.process_input(M5Menu::Input::LEFT);
+    break;
+
+    case 56:
+    menu.process_input(M5Menu::Input::RIGHT);
+    break;
+
+    default:
+        break;
+  }
+  render();
+}
+
+void update_SD_Count(){
+  if(sd_state == SD_NONE) return;
+  sd_files_amount = 0;
+  FsFile root;
+  FsFile file;
+
+  if (!root.open("/DCMI")) return;
+
+  while (file.openNext(&root, O_RDONLY)) {
+    if (!file.isDir()) {
+        sd_files_amount++;
+    }
+    file.close();
+  }
+  root.close();
+}
+
+void SDTask(void *pvParameters){
+  uint32_t notificationValue = 0;
+  char filename[256];
+  for(;;){
+      if (xTaskNotifyWait(0x00, 0xFFFFFFFF, &notificationValue, portMAX_DELAY) == pdPASS) {
+        switch (current_mode)
+        {
+        case MODE_PHOTO:
+        snprintf(filename, sizeof(filename), "/DCMI/Photo_%u.jpeg", sd_files_amount);
+          break;
+        
+        default: break;
+        }
+
+        
+        if(global_settings.direct_write){
+          if (!current_file.isOpen()) {current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);}
+            current_file.write(Buffers[!current_buffer].memory, Buffers[!current_buffer].head);
+            Buffers[!current_buffer].head = 0;
+            Serial.println("Write");
+            if(DW_Done){
+              current_file.close();
+              Serial.println("Finished from SD");
+              sd_state = SD_NORMAL;
+              DW_Done = false;
+              Buffers[0].head = 0;
+              Buffers[1].head = 0;
+              update_SD_Count();
+              resolution_modeset(&viewfinder_settings);
+            }
+        }
+        else{
+            current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
+            current_file.write(video_buffer,jpeg_length);
+            current_file.close();
+            sd_state = SD_NORMAL;
+            update_SD_Count();
+            resolution_modeset(&viewfinder_settings);
+        }
+      }
+  }
+}
+
+void SDWrite(){
+  sd_state = SD_BUSY;
+  if(!global_settings.direct_write){StopFrame();}
+  xTaskNotifyGive(SDHandlerTask);
+}
+
+void HandleBuffering(){
+  int bytes_available = Serial2.available();
+  int bytes_to_read = min(bytes_available, (int)(jpeg_length - frame_bytes_read));
+  if (global_settings.direct_write and _frame_state == FRAME_DISABLED){
+    Serial2.readBytes(&Buffers[current_buffer].memory[Buffers[current_buffer].head], bytes_to_read);
+    Buffers[current_buffer].head += bytes_to_read;
+    if (frame_bytes_read + bytes_to_read >= jpeg_length){
+      Serial.println("read all bytes, last write in progress.");
+      DW_Done = true;
+      current_buffer = !current_buffer;
+      SDWrite();
+    }
+    if (Buffers[current_buffer].head >= Buffers[current_buffer].size){ // this
+      Serial.println("Swapper bufffer!");
+      current_buffer = !current_buffer;
+      SDWrite();
+      return;
+    }
+  }
+  else{
+   Serial2.readBytes(&video_buffer[frame_bytes_read], bytes_to_read);
+  }
+  frame_bytes_read += bytes_to_read;
+}
+
 void take_photo(){
   if(_flash_state == FLASH_ON) modeSetSend(FLASH,0);
   SetFrameState(FRAME_DISABLED);
@@ -360,22 +363,6 @@ void take_photo(){
   if(sd_state == SD_NONE) {resolution_modeset(&viewfinder_settings); return;}
   SDWrite();
 }
-
-void camera_poll(){
-  battery_level = M5Cardputer.Power.getBatteryLevel();
-  if(at_menu) return;
-  if (millis() - lastFrameTime > FRAME_TIMEOUT){
-    RequestFrame();
-    renderStatic();
-    canvas.setFont(NO_SIGNAL_FONT);
-    canvas.setTextDatum(middle_center);
-    canvas.setTextColor(ORANGE,BLACK);
-    canvas.drawString("No video",M5.Display.width()/2,M5.Display.height()/2);
-    if (at_menu) return;
-    render();
-  }
-}
-Ticker camera_poll_ticker(camera_poll,FRAME_TIMEOUT,0,MILLIS);
 
 void OOM(){
   if(global_settings.direct_write) return;
@@ -397,6 +384,19 @@ void OOM(){
 void CameraTick(){
   if (at_menu) return;
   if (_frame_state == FRAME_DISABLED and !global_settings.direct_write) return;
+  battery_level = M5Cardputer.Power.getBatteryLevel();
+  if(at_menu) return;
+  if (millis() - lastFrameTime > FRAME_TIMEOUT){
+    RequestFrame();
+    Static();
+    canvas.setFont(NO_SIGNAL_FONT);
+    canvas.setTextDatum(middle_center);
+    canvas.setTextColor(ORANGE,BLACK);
+    canvas.drawString("No video",M5.Display.width()/2,M5.Display.height()/2);
+    if (at_menu) return;
+    render();
+  }
+
   while (Serial2.available() > 0) {
   switch (rx_state)
     {
@@ -418,15 +418,8 @@ void CameraTick(){
         lastFrameTime = millis();
         if (frame_bytes_read < jpeg_length) return;
 
-        Resolution r = frameSizes[current_settings->FR_SIZE];
-        float scale = min((float)canvas.width() / r.w, (float)canvas.height() / r.h);
-        int x = (canvas.width() - (r.w * scale)) / 2;
-        int y = (canvas.height() - (r.h * scale)) / 2;
-
-        canvas.drawJpg(video_buffer, jpeg_length, x, y,0,0,0, scale,scale);
-        if (global_settings.invert_rgb) invert_rgb(x, y, r.w * scale, r.h * scale);
-        if (global_settings.invert_endians) invert_endians(x, y, r.w * scale, r.h * scale);
-
+        canvas.drawJpg(video_buffer, jpeg_length, canvas_state.render_x, canvas_state.render_y,0,0,0, canvas_state.resolution_scale, canvas_state.resolution_scale);
+        invert_endians();
         // Reset state machine and request the next frame
         if (_frame_state == FRAME_AWAIT_PHOTO){
           frame_await_queque ++;
@@ -477,7 +470,6 @@ void setup() {
   M5Cardputer.Display.setFont(UI_FONT);
   Serial2.setRxBufferSize(40000);
   Serial2.begin(2000000,SERIAL_8N1,13,15);
-  camera_poll_ticker.start();
   g0Button.setPressMs(0);
   g0Button.attachLongPressStart(button_press);
   g0Button.attachLongPressStop(button_release);
@@ -498,6 +490,5 @@ void loop() {
   M5Cardputer.update();
   keyHandler.KeyboardUpdate();
   CameraTick();
-  camera_poll_ticker.update();
   g0Button.tick();
 }
