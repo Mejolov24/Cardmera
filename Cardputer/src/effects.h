@@ -4,6 +4,7 @@
 #include <M5GFX.h>
 extern M5Canvas canvas;
 extern Canvas_State canvas_state;
+
 uint32_t fast_noise() {
     static uint32_t state = 0xACE1u; // Seed
     state ^= state << 13;
@@ -55,4 +56,7 @@ void invert_endians() {
     }
   }
 }
+
+
+
 #endif

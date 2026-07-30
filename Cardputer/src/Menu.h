@@ -1,7 +1,6 @@
 #ifndef MENU_H
 #define MENU_H
 #include <M5Menu.h>
-
 #define SD_SPI_SCK_PIN  40
 #define SD_SPI_MISO_PIN 39
 #define SD_SPI_MOSI_PIN 14
@@ -173,15 +172,23 @@ localCameraSettings viewfinder_settings = {};
 localCameraSettings photo_settings = {};
 localCameraSettings recording_settings = {};
 
+extern uint8_t effect_layers[12];
+extern String effect_names[12];
+
 M5Menu::MenuItem circuit_bending_items[] = {
-    {
-        "Invert RGB",
-        &global_settings.invert_rgb
-    },
-    {
-        "Invert Endians",
-        &global_settings.invert_endians
-    }
+    {"Layer 1", &effect_layers[0], effect_names},
+    {"Layer 2", &effect_layers[1], effect_names},
+    {"Layer 3", &effect_layers[2], effect_names},
+    {"Layer 4", &effect_layers[3], effect_names},
+    {"Layer 5", &effect_layers[4], effect_names},
+    {"Layer 6", &effect_layers[5], effect_names},
+    {"Layer 7", &effect_layers[6], effect_names},
+    {"Layer 8", &effect_layers[7], effect_names},
+    {"Layer 9", &effect_layers[8], effect_names},
+    {"Layer 10", &effect_layers[9], effect_names},
+    {"Layer 11", &effect_layers[10], effect_names},
+    {"Layer 12", &effect_layers[11], effect_names}
+
 };
 M5Menu::Menu circuit_bending_menu(5,circuit_bending_items);
 extern void modeSetSend(modetype mode,int8_t value);

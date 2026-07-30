@@ -43,8 +43,20 @@ enum Mode{
   MODE_PHOTO,
   MODE_VIDEO
 };
-Canvas_State canvas_state = {};
 
+#define EFFECT_LAYERS 12
+uint8_t effect_layers[EFFECT_LAYERS];
+String effect_names[EFFECT_LAYERS] = {"None", "Flip rgb", "Flip endian"};
+using FuncPtr = void(*)(); 
+FuncPtr effects[] = {nullptr, invert_rgb, invert_endians};
+
+void render_effects(){
+  for(uint8_t layer = 0; layer < EFFECT_LAYERS; layer++){
+    if(effects[effect_layers[layer]]) effects[effect_layers[layer]]();
+  }
+}
+
+Canvas_State canvas_state = {};
 ReceiveState rx_state = WAIT_SYNC_1;
 uint32_t jpeg_length = 0;
 uint32_t frame_bytes_read = 0;
@@ -97,8 +109,12 @@ Serial2.write(static_cast<uint8_t>(value));
 void set_charging(bool state){
   if (state){
     M5Cardputer.Display.setBrightness(0);
+    M5Cardputer.Display.sleep();
+    setCpuFrequencyMhz(80);
   }
   else{
+    setCpuFrequencyMhz(240);
+    M5Cardputer.Display.wakeup();
     M5Cardputer.Display.setBrightness(255);
   }
 }
@@ -243,6 +259,7 @@ void render(){
 }
 
 void OnKey(uint8_t key, bool pressed){
+  if(pressed) set_charging(false);
   Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
   if (status.opt){
     at_menu = !at_menu;
@@ -434,7 +451,7 @@ void CameraTick(){
         if (frame_bytes_read < jpeg_length) return;
 
         canvas.drawJpg(video_buffer, jpeg_length, canvas_state.render_x, canvas_state.render_y,0,0,0, canvas_state.resolution_scale, canvas_state.resolution_scale);
-        invert_endians();
+        render_effects();
         // Reset state machine and request the next frame
         if (_frame_state == FRAME_AWAIT_PHOTO){
           frame_await_queque ++;
