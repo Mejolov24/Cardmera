@@ -6,6 +6,7 @@
 #include <OneButton.h>
 #include <SdFat.h>
 #include <sprites.h>
+#include <img_converters.h>
 SdFat sd;
 FsFile current_file;
 OneButton g0Button(0, true);
@@ -43,19 +44,44 @@ enum Mode{
   MODE_PHOTO,
   MODE_VIDEO
 };
-
+bool has_effects = false;
 #define EFFECT_LAYERS 12
 uint8_t effect_layers[EFFECT_LAYERS];
-String effect_names[EFFECT_LAYERS] = {"None", "Flip rgb", "Flip endian"};
-using FuncPtr = void(*)(); 
-FuncPtr effects[] = {nullptr, invert_rgb, invert_endians};
+uint8_t effect_layers_strenght[EFFECT_LAYERS];
+String effect_names[EFFECT_LAYERS] = {"None", "Flip endian", "Bleed", "RB Mask", "Flip rgb"};
+using FuncPtr = void(*)(uint8_t strength); 
+FuncPtr effects[] = {nullptr, invert_endians, bleeding, rb_mask, invert_rgb};
 
 void render_effects(){
+  uint8_t effect_count = 0;
   for(uint8_t layer = 0; layer < EFFECT_LAYERS; layer++){
-    if(effects[effect_layers[layer]]) effects[effect_layers[layer]]();
+    uint8_t strength = static_cast<uint8_t>((effect_layers_strenght[layer] * 255) / 100);
+    if(effects[effect_layers[layer]]){effects[effect_layers[layer]](strength); effect_count ++;}
   }
+  has_effects = (effect_count > 0);
+  Serial.print("effects : ");
+  Serial.println(has_effects);
 }
 
+// Context struct to keep track of where we are writing inside video_buffer
+struct VideoBufferWriter {
+    uint8_t* buffer;
+    size_t capacity;
+    size_t length;
+};
+
+// Callback invoked by the encoder as it generates compressed blocks
+size_t custom_video_buffer_cb(void* arg, size_t index, const void* data, size_t size) {
+    VideoBufferWriter* writer = (VideoBufferWriter*)arg;
+    
+    // Check if it fits in video_buffer
+    if (writer->length + size <= writer->capacity) {
+        memcpy(writer->buffer + writer->length, data, size);
+        writer->length += size;
+        return size;
+    }
+    return 0; // Overflow safety
+}
 Canvas_State canvas_state = {};
 ReceiveState rx_state = WAIT_SYNC_1;
 uint32_t jpeg_length = 0;
@@ -84,11 +110,14 @@ Buffer Buffers[2] = {Buffer_A, Buffer_B};
 unsigned long lastFrameTime = 0;
 const unsigned long FRAME_TIMEOUT = 2000;
 uint8_t frame_await_queque = 0;
+unsigned long camerapoll_time = 0;
+const unsigned long camerapoll_threshold = 500;
 
 bool at_menu = false;
 bool holding_shutter = false;
 bool out_of_memory = false;
 bool battery_charging;
+bool TimeoutTriggered = false;
 volatile bool current_buffer = 0;
 volatile bool DW_Done = false;
 volatile SDState sd_state = SD_NONE;
@@ -171,7 +200,6 @@ void resolution_modeset(localCameraSettings* mode){
   else{at_viewfinder = false;}
   current_settings = mode;
   StopFrame();
-
   setup_canvas_state();
 
   modeSetSend(FR_SIZE,current_settings->FR_SIZE);
@@ -255,7 +283,7 @@ void render(){
   if(global_settings.direct_write){render_sprite(SPRITE_DIRECT_WRITE,224,119);}
 
   canvas.pushSprite(0,0);
-  canvas.clear();
+  if(sd_state != SD_BUSY)canvas.clear();
 }
 
 void OnKey(uint8_t key, bool pressed){
@@ -301,7 +329,7 @@ void update_SD_Count(){
   FsFile root;
   FsFile file;
 
-  if (!root.open("/DCMI")) return;
+  if (!root.open("/DCIM")) return;
 
   while (file.openNext(&root, O_RDONLY)) {
     if (!file.isDir()) {
@@ -320,7 +348,7 @@ void SDTask(void *pvParameters){
         switch (current_mode)
         {
         case MODE_PHOTO:
-        snprintf(filename, sizeof(filename), "/DCMI/Photo_%u.jpeg", sd_files_amount);
+        snprintf(filename, sizeof(filename), "/DCIM/Photo_%u.jpeg", sd_files_amount);
           break;
         
         default: break;
@@ -343,9 +371,41 @@ void SDTask(void *pvParameters){
               resolution_modeset(&viewfinder_settings);
             }
         }
-        else{
+        else if (!has_effects){
             current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
             current_file.write(video_buffer,jpeg_length);
+            current_file.close();
+            sd_state = SD_NORMAL;
+            update_SD_Count();
+            resolution_modeset(&viewfinder_settings);
+        }
+        else{
+            current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
+            
+            Resolution r = frameSizes[current_settings->FR_SIZE];
+            
+            // Set up our zero-alloc writer targeting your existing video_buffer
+            VideoBufferWriter writer;
+            writer.buffer = video_buffer;
+            writer.capacity = MAX_IMG_SIZE;
+            writer.length = 0;
+            uint16_t enc_w = canvas.width();
+            uint16_t enc_h = canvas.height();
+            bool success = fmt2jpg_cb(
+                (uint8_t*)canvas.getBuffer(), 
+                enc_w * enc_h * 2,                 
+                enc_w,                           
+                enc_h,                           
+                PIXFORMAT_RGB565,              
+                255,
+                custom_video_buffer_cb,        
+                &writer                        
+            );
+
+            if (success && writer.length > 0) {
+                // Write directly from video_buffer to the SD card
+                current_file.write(video_buffer, writer.length);
+            }
             current_file.close();
             sd_state = SD_NORMAL;
             update_SD_Count();
@@ -357,6 +417,7 @@ void SDTask(void *pvParameters){
 
 void SDWrite(){
   sd_state = SD_BUSY;
+  render();
   if(!global_settings.direct_write){StopFrame();}
   xTaskNotifyGive(SDHandlerTask);
 }
@@ -388,6 +449,7 @@ void HandleBuffering(){
 
 void take_photo(){
   if(_flash_state == FLASH_ON) modeSetSend(FLASH,0);
+  StopFrame();
   SetFrameState(FRAME_DISABLED);
   frame_await_queque = 0;
   M5Cardputer.Speaker.tone(CAMERA_RELEASE,30);
@@ -418,8 +480,12 @@ void CameraTick(){
   battery_level = M5Cardputer.Power.getBatteryLevel();
   if(at_menu) return;
   if (millis() - lastFrameTime > FRAME_TIMEOUT){
-    RequestFrame();
-    force_modeset();
+    if (!TimeoutTriggered or (millis() - camerapoll_time > camerapoll_threshold)){
+      force_modeset();
+      RequestFrame();
+      camerapoll_time = millis();
+      TimeoutTriggered = true;
+    }
     Static();
     canvas.setFont(NO_SIGNAL_FONT);
     canvas.setTextDatum(middle_center);
@@ -448,6 +514,7 @@ void CameraTick(){
     case READ_PAYLOAD:{
         HandleBuffering();
         lastFrameTime = millis();
+        TimeoutTriggered = false;
         if (frame_bytes_read < jpeg_length) return;
 
         canvas.drawJpg(video_buffer, jpeg_length, canvas_state.render_x, canvas_state.render_y,0,0,0, canvas_state.resolution_scale, canvas_state.resolution_scale);
@@ -482,6 +549,8 @@ void button_release(){
 
 // TODO: make ticker start and stop during disconects, and make it faster for a cooler effect.
 void setup() {
+  delay(50); //speaker breathing room
+  memset(effect_layers_strenght, 50, sizeof(effect_layers_strenght));
   auto cfg = M5.config();
   M5Cardputer.begin(cfg);
   M5Cardputer.Power.getBatteryLevel();
@@ -491,7 +560,7 @@ void setup() {
   if(sd.begin(SD_SPI_CS_PIN, SD_SCK_MHZ(25))){sd_state = SD_NORMAL;}
   sd.mkdir("/AppData");
   sd.mkdir("/AppData/Cardmera");
-  sd.mkdir("/DCMI");
+  sd.mkdir("/DCIM");
   update_SD_Count();
   Serial.begin(9600);
   battery_level = M5Cardputer.Power.getBatteryLevel();

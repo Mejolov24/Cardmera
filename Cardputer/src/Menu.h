@@ -163,9 +163,6 @@ struct GlobalCameraSettings {
     uint8_t frame_await = 0;
     bool direct_write = false;
     uint8_t volume = 100;
-
-    bool invert_rgb = false;
-    bool invert_endians = false;
 };
 GlobalCameraSettings global_settings = {};
 localCameraSettings viewfinder_settings = {};
@@ -173,7 +170,25 @@ localCameraSettings photo_settings = {};
 localCameraSettings recording_settings = {};
 
 extern uint8_t effect_layers[12];
+extern uint8_t effect_layers_strenght[12];
 extern String effect_names[12];
+
+M5Menu::MenuItem circuit_bending_tweaks_items[] = {
+    {"Layer 1 Strenght", &effect_layers_strenght[0], 10, 0, 100},
+    {"Layer 2 Strenght", &effect_layers_strenght[1], 10, 0, 100},
+    {"Layer 3 Strenght", &effect_layers_strenght[2], 10, 0, 100},
+    {"Layer 4 Strenght", &effect_layers_strenght[3], 10, 0, 100},
+    {"Layer 5 Strenght", &effect_layers_strenght[4], 10, 0, 100},
+    {"Layer 6 Strenght", &effect_layers_strenght[5], 10, 0, 100},
+    {"Layer 7 Strenght", &effect_layers_strenght[6], 10, 0, 100},
+    {"Layer 8 Strenght", &effect_layers_strenght[7], 10, 0, 100},
+    {"Layer 9 Strenght", &effect_layers_strenght[8], 10, 0, 100},
+    {"Layer 10 Strenght", &effect_layers_strenght[9], 10, 0, 100},
+    {"Layer 11 Strenght", &effect_layers_strenght[10], 10, 0, 100},
+    {"Layer 12 Strenght", &effect_layers_strenght[11], 10, 0, 100}
+
+};
+M5Menu::Menu circuit_bending_tweaks(5,circuit_bending_tweaks_items);
 
 M5Menu::MenuItem circuit_bending_items[] = {
     {"Layer 1", &effect_layers[0], effect_names},
@@ -193,7 +208,8 @@ M5Menu::MenuItem circuit_bending_items[] = {
 M5Menu::Menu circuit_bending_menu(5,circuit_bending_items);
 extern void modeSetSend(modetype mode,int8_t value);
 extern void set_charging(bool state);
-void set_FR_SIZE(){modeSetSend(FR_SIZE,viewfinder_settings.FR_SIZE);}
+extern void setup_canvas_state();
+void set_FR_SIZE(){modeSetSend(FR_SIZE,viewfinder_settings.FR_SIZE); setup_canvas_state();}
 void set_JPEG_QUALITY(){modeSetSend(JPEG_QUALITY,viewfinder_settings.JPEG_QUALITY);}
 void set_BRIGHTNESS(){modeSetSend(BRIGHTNESS, global_settings.BRIGHTNESS);}
 void set_CONTRAST(){modeSetSend(CONTRAST, global_settings.CONTRAST);}
@@ -243,8 +259,6 @@ M5Menu::MenuItem global_settings_items[] = {
     {"Mirror Image", &global_settings.MIRROR, set_MIRROR},
     {"Flip Image", &global_settings.FLIP, set_FLIP},
     {"Color Effect", &global_settings.SPECIAL, 1, 0, 6, set_SPECIAL},
-    {"Volume",&global_settings.volume,10,0,100,set_volume},
-    {"Circuit Bending",&circuit_bending_menu}
 };
 M5Menu::Menu global_menu_settings(4,global_settings_items);
 
@@ -292,6 +306,14 @@ M5Menu::MenuItem photo_settings_items[] = {
 };
 M5Menu::Menu photo_menu_settings(2,photo_settings_items);
 
+M5Menu::MenuItem other_settings_items[] = {
+    {"Circuit Bending Tweaks",&circuit_bending_tweaks},
+    {"Circuit Bending",&circuit_bending_menu},
+    {"Volume",&global_settings.volume,10,0,100,set_volume},
+    {"Charging Mode",&charging_mode}
+};
+M5Menu::Menu other_settings(6,other_settings_items);
+
 
 M5Menu::MenuItem viewfinder_settings_items[] = {
     {
@@ -329,10 +351,9 @@ M5Menu::MenuItem main_menu_items[] = {
         &global_menu_settings
     },
     {
-        "Charging Mode",
-        &charging_mode
+        "Other Settings",
+        &other_settings
     }
-    
 };
 M5Menu::Menu main_menu(0,main_menu_items);
 #endif
