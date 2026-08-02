@@ -10,6 +10,12 @@ Features and TODO:
 - [x] Custom effects
 - [ ] Direct Write (Double buffering)
 
+# Usage:
+- Get latest release source code.
+- Go to Cardmera/Cardputer, compile and upload.
+- Go to Cardmera/ESPCAM, compile an upload.
+- Connect the ESP32CAM VOT (TX) to G13 (RX), VOR to G15
+
 ## Controls
 ESC: Flash toggle
 G0: Hold to preview resolution and flash, release for taking the photo.
