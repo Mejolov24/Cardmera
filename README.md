@@ -1,6 +1,8 @@
 # Cardmera
 Turn your cardputer into a camera with an ESP32-CAM
 
+![thumbnail](https://github.com/Mejolov24/Cardmera/blob/main/Screenshots/UI.jpeg?raw=true)
+
 Features and TODO:
 - [x] Photos
 - [ ] Videos
