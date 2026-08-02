@@ -117,9 +117,9 @@ String resolutions[] = {
 };
 
 M5Menu::MenuTheme theme{
-.background_color = 0x211a,
-.border_color = 0x2c9f,
-.selection_color = 0x06e0,
+.background_color = BLACK,
+.border_color = RED,
+.selection_color = BLUE,
 .value_color = WHITE,
 .item_height = 23,
 .item_window = 5,
@@ -298,10 +298,7 @@ M5Menu::MenuItem photo_settings_items[] = {
         "Frame await",
         &global_settings.frame_await
     },
-    {
-        "Direct Write",
-        &global_settings.direct_write
-    }
+    // { "Direct Write", global_settings.direct_write}
     
 };
 M5Menu::Menu photo_menu_settings(2,photo_settings_items);

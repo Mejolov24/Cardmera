@@ -48,13 +48,14 @@ bool has_effects = false;
 #define EFFECT_LAYERS 12
 uint8_t effect_layers[EFFECT_LAYERS];
 uint8_t effect_layers_strenght[EFFECT_LAYERS];
-String effect_names[EFFECT_LAYERS] = {"None", "Flip endian", "Bleed", "RB Mask", "Flip rgb"};
+String effect_names[] = {"None", "Flip endian", "Bleed", "RB Mask", "Flip rgb"};
 using FuncPtr = void(*)(uint8_t strength); 
 FuncPtr effects[] = {nullptr, invert_endians, bleeding, rb_mask, invert_rgb};
 
 void render_effects(){
   uint8_t effect_count = 0;
   for(uint8_t layer = 0; layer < EFFECT_LAYERS; layer++){
+    
     uint8_t strength = static_cast<uint8_t>((effect_layers_strenght[layer] * 255) / 100);
     if(effects[effect_layers[layer]]){effects[effect_layers[layer]](strength); effect_count ++;}
   }
@@ -129,6 +130,7 @@ TaskHandle_t SDHandlerTask;
 uint8_t _flash_state = FLASH_OFF;
 Mode current_mode = MODE_PHOTO;
 bool at_viewfinder = true;
+bool debug_screenshot = false;
 void modeSetSend(modetype mode,int8_t value = 0){
 Serial2.write(0xFF);
 Serial2.write(mode);
@@ -286,43 +288,6 @@ void render(){
   if(sd_state != SD_BUSY)canvas.clear();
 }
 
-void OnKey(uint8_t key, bool pressed){
-  if(pressed) set_charging(false);
-  Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
-  if (status.opt){
-    at_menu = !at_menu;
-    at_menu ? menu.open() : menu.close();
-  }
-  if (status.del){menu.process_input(M5Menu::Input::BACK);}
-  if (status.enter) menu.process_input(M5Menu::Input::SELECT);
-  if(!pressed) return;
-  switch (key){
-
-    case 53: // escape
-    SetFlash();
-    break;
-    
-    case 51:
-        menu.process_input(M5Menu::Input::UP);
-        break;
-    case 55:
-        menu.process_input(M5Menu::Input::DOWN);
-        break;
-
-    case 54:
-    menu.process_input(M5Menu::Input::LEFT);
-    break;
-
-    case 56:
-    menu.process_input(M5Menu::Input::RIGHT);
-    break;
-
-    default:
-        break;
-  }
-  if(!at_menu) render();
-}
-
 void update_SD_Count(){
   if(sd_state == SD_NONE) return;
   sd_files_amount = 0;
@@ -338,6 +303,27 @@ void update_SD_Count(){
     file.close();
   }
   root.close();
+}
+
+int32_t screenshot_buffer() //workaround for custom effects:
+{
+            VideoBufferWriter writer;
+            writer.buffer = video_buffer;
+            writer.capacity = MAX_IMG_SIZE;
+            writer.length = 0;
+            uint16_t enc_w = canvas.width();
+            uint16_t enc_h = canvas.height();
+            bool success = fmt2jpg_cb(
+                (uint8_t*)canvas.getBuffer(), 
+                enc_w * enc_h * 2,                 
+                enc_w,                           
+                enc_h,                           
+                PIXFORMAT_RGB565,              
+                255,
+                custom_video_buffer_cb,        
+                &writer                        
+            );
+            return writer.length;
 }
 
 void SDTask(void *pvParameters){
@@ -371,41 +357,20 @@ void SDTask(void *pvParameters){
               resolution_modeset(&viewfinder_settings);
             }
         }
-        else if (!has_effects){
+        else if (has_effects){
             current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
-            current_file.write(video_buffer,jpeg_length);
+            uint32_t length = screenshot_buffer();
+            current_file.write(video_buffer, length);
             current_file.close();
             sd_state = SD_NORMAL;
             update_SD_Count();
             resolution_modeset(&viewfinder_settings);
+            debug_screenshot = false;
         }
         else{
-            current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
-            
-            Resolution r = frameSizes[current_settings->FR_SIZE];
-            
-            // Set up our zero-alloc writer targeting your existing video_buffer
-            VideoBufferWriter writer;
-            writer.buffer = video_buffer;
-            writer.capacity = MAX_IMG_SIZE;
-            writer.length = 0;
-            uint16_t enc_w = canvas.width();
-            uint16_t enc_h = canvas.height();
-            bool success = fmt2jpg_cb(
-                (uint8_t*)canvas.getBuffer(), 
-                enc_w * enc_h * 2,                 
-                enc_w,                           
-                enc_h,                           
-                PIXFORMAT_RGB565,              
-                255,
-                custom_video_buffer_cb,        
-                &writer                        
-            );
 
-            if (success && writer.length > 0) {
-                // Write directly from video_buffer to the SD card
-                current_file.write(video_buffer, writer.length);
-            }
+            current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
+            current_file.write(video_buffer,jpeg_length);
             current_file.close();
             sd_state = SD_NORMAL;
             update_SD_Count();
@@ -445,6 +410,57 @@ void HandleBuffering(){
    Serial2.readBytes(&video_buffer[frame_bytes_read], bytes_to_read);
   }
   frame_bytes_read += bytes_to_read;
+}
+
+
+void OnKey(uint8_t key, bool pressed){
+  if(pressed) set_charging(false);
+  Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+  if (status.opt){
+    at_menu = !at_menu;
+    at_menu ? menu.open() : menu.close();
+  }
+  Serial.println(key);
+  if (status.del){menu.process_input(M5Menu::Input::BACK);}
+  if (status.enter) menu.process_input(M5Menu::Input::SELECT);
+  if(!pressed) return;
+  switch (key){
+
+    case 53: // escape
+    SetFlash();
+    break;
+    case 22:{
+      StopFrame();
+      char filename[256];
+      snprintf(filename, sizeof(filename), "/DCIM/Photo_%u.jpeg", sd_files_amount);
+      current_file = sd.open(filename, O_WRITE | O_CREAT | O_TRUNC);
+      uint32_t length = screenshot_buffer();
+      current_file.write(video_buffer, length);
+      current_file.close();
+      sd_state = SD_NORMAL;
+      update_SD_Count();
+      resolution_modeset(&viewfinder_settings);
+      debug_screenshot = false;
+      break;
+    }
+    case 51:
+      menu.process_input(M5Menu::Input::UP);
+      break;
+    case 55:
+      menu.process_input(M5Menu::Input::DOWN);
+      break;
+
+    case 54:
+      menu.process_input(M5Menu::Input::LEFT);
+      break;
+
+    case 56:
+      menu.process_input(M5Menu::Input::RIGHT);
+      break;
+
+    default: break;
+  }
+  if(!at_menu) render();
 }
 
 void take_photo(){
@@ -571,7 +587,7 @@ void setup() {
   M5Cardputer.Display.setFont(UI_FONT);
   Serial2.setRxBufferSize(40000);
   Serial2.begin(2000000,SERIAL_8N1,13,15);
-  g0Button.setPressMs(0);
+  g0Button.setPressMs(0);               
   g0Button.attachLongPressStart(button_press);
   g0Button.attachLongPressStop(button_release);
   keyHandler.SetupKeyboardCallback(OnKey);
