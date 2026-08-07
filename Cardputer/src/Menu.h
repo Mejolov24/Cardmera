@@ -166,7 +166,7 @@ struct GlobalCameraSettings {
 };
 GlobalCameraSettings global_settings = {};
 localCameraSettings viewfinder_settings = {};
-localCameraSettings photo_settings = {};
+localCameraSettings photo_settings = {.FR_SIZE = 10};
 localCameraSettings recording_settings = {};
 
 extern uint8_t effect_layers[12];

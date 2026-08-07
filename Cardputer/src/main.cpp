@@ -15,6 +15,22 @@ M5Menu menu;
 M5Canvas canvas(&M5.Lcd);
 M5Canvas sprite_buffer(&canvas);
 
+Resolution getJpegSize(uint8_t* data, size_t len){
+  Resolution resolution = {0,0};
+
+    for(size_t i = 0; i < len - 9; i++)
+    {
+        if(data[i] == 0xFF &&
+           (data[i+1] >= 0xC0 && data[i+1] <= 0xC3))
+        {
+            resolution.h = (data[i+5] << 8) | data[i+6];
+            resolution.w = (data[i+7] << 8) | data[i+8];
+            return resolution;
+        }
+    }
+    return resolution;
+}
+
 struct Canvas_State{
   Resolution resolution;
   float resolution_scale = 0;
@@ -44,6 +60,14 @@ enum Mode{
   MODE_PHOTO,
   MODE_VIDEO
 };
+
+enum Menu_Type{
+  MENU_NONE,
+  MENU_SETTINGS,
+  MENU_PHOTOBOOK
+};
+Menu_Type current_menu = MENU_NONE;
+
 bool has_effects = false;
 #define EFFECT_LAYERS 12
 uint8_t effect_layers[EFFECT_LAYERS];
@@ -60,8 +84,6 @@ void render_effects(){
     if(effects[effect_layers[layer]]){effects[effect_layers[layer]](strength); effect_count ++;}
   }
   has_effects = (effect_count > 0);
-  Serial.print("effects : ");
-  Serial.println(has_effects);
 }
 
 // Context struct to keep track of where we are writing inside video_buffer
@@ -89,11 +111,13 @@ uint32_t jpeg_length = 0;
 uint32_t frame_bytes_read = 0;
 
 #define MAX_IMG_SIZE 150000
+#define MAX_PHOTOS 1024
 #define HALF_BUFFER ((MAX_IMG_SIZE) /2)
 #define ACTION_WRITE_SD_BUFFER 1
 #define ACTION_WRITE_SD_BUFFER_A 2
 #define ACTION_WRITE_SD_BUFFER_B 3
 uint8_t video_buffer[MAX_IMG_SIZE];
+String photo_names[MAX_PHOTOS];
 
 class Buffer{
   public:
@@ -114,7 +138,7 @@ uint8_t frame_await_queque = 0;
 unsigned long camerapoll_time = 0;
 const unsigned long camerapoll_threshold = 500;
 
-bool at_menu = false;
+
 bool holding_shutter = false;
 bool out_of_memory = false;
 bool battery_charging;
@@ -125,12 +149,14 @@ volatile SDState sd_state = SD_NONE;
 volatile FrameState _frame_state = FRAME_NORMAL;
 int32_t battery_level = 0;
 uint16_t sd_files_amount = 0;
+uint16_t photobook_index = 0;
 localCameraSettings* current_settings = &viewfinder_settings;
 TaskHandle_t SDHandlerTask;
 uint8_t _flash_state = FLASH_OFF;
 Mode current_mode = MODE_PHOTO;
 bool at_viewfinder = true;
 bool debug_screenshot = false;
+
 void modeSetSend(modetype mode,int8_t value = 0){
 Serial2.write(0xFF);
 Serial2.write(mode);
@@ -263,7 +289,7 @@ void render_sprite(uint8_t sprite_id,uint16_t pos_X,uint16_t pos_Y){
 }
 
 void render(){
-  if(at_menu){
+  if(current_menu != MENU_NONE){
     canvas.pushSprite(0,0);
     canvas.clear();
     return;
@@ -288,7 +314,44 @@ void render(){
   if(sd_state != SD_BUSY)canvas.clear();
 }
 
+void handle_photobook(){
+  FsFile dir;
+  FsFile photoFile;
+  Resolution resolution;
+  float resolution_scale = 0;
+  uint32_t render_w = 0;
+  uint32_t render_h = 0;
+  uint32_t render_x = 0;
+  uint32_t render_y = 0;
+
+  dir.open("/DCIM");
+  photoFile.open(("/DCIM/" + photo_names[photobook_index]).c_str(), O_RDONLY);
+  jpeg_length = photoFile.size();
+  
+  Serial.print("Opening index ");
+  Serial.println(photobook_index);
+
+  Serial.print("File size: ");
+  Serial.println(photoFile.size());
+
+  photoFile.read(video_buffer, jpeg_length);
+  resolution = getJpegSize(video_buffer,jpeg_length);
+  
+  resolution_scale = min((float)canvas.width() / resolution.w, (float)canvas.height() / resolution.h);
+  render_h = static_cast<uint32_t>(resolution.h * resolution_scale);
+  render_w = static_cast<uint32_t>(resolution.w * resolution_scale);
+  render_x = (canvas.width() - render_w) / 2;
+  render_y = (canvas.height() - render_h) / 2;
+  
+  canvas.drawJpg(video_buffer, jpeg_length, render_x, render_y,0,0,0, resolution_scale, resolution_scale);
+  photoFile.close();
+  dir.close();
+  render();
+}
+
+
 void update_SD_Count(){
+  char name[256];
   if(sd_state == SD_NONE) return;
   sd_files_amount = 0;
   FsFile root;
@@ -298,11 +361,14 @@ void update_SD_Count(){
 
   while (file.openNext(&root, O_RDONLY)) {
     if (!file.isDir()) {
-        sd_files_amount++;
+      file.getName(name, sizeof(name));
+      photo_names[sd_files_amount++] = name;
     }
     file.close();
   }
   root.close();
+  photobook_index = sd_files_amount;
+  photobook_index = (sd_files_amount > 0) ? sd_files_amount - 1 : 0;
 }
 
 int32_t screenshot_buffer() //workaround for custom effects:
@@ -417,8 +483,13 @@ void OnKey(uint8_t key, bool pressed){
   if(pressed) set_charging(false);
   Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
   if (status.opt){
-    at_menu = !at_menu;
-    at_menu ? menu.open() : menu.close();
+    switch (current_menu)
+    {
+    case MENU_NONE: current_menu = MENU_SETTINGS; menu.open(); break;
+    case MENU_PHOTOBOOK: current_menu = MENU_SETTINGS; menu.open(); break;
+    case MENU_SETTINGS: current_menu = MENU_NONE; menu.close(); break;
+    default: break;
+    }
   }
   Serial.println(key);
   if (status.del){menu.process_input(M5Menu::Input::BACK);}
@@ -452,15 +523,27 @@ void OnKey(uint8_t key, bool pressed){
 
     case 54:
       menu.process_input(M5Menu::Input::LEFT);
+      if (current_menu == MENU_PHOTOBOOK and photobook_index > 0) photobook_index --;
       break;
 
     case 56:
       menu.process_input(M5Menu::Input::RIGHT);
+      if (current_menu == MENU_PHOTOBOOK and photobook_index +1 < sd_files_amount) photobook_index ++;
+      break;
+    case 43:
+    switch (current_menu)
+      {
+      case MENU_NONE: current_menu = MENU_PHOTOBOOK ; break;
+      case MENU_PHOTOBOOK: current_menu = MENU_NONE; break;
+      case MENU_SETTINGS: current_menu = MENU_PHOTOBOOK; menu.close(); break;
+      default: break;
+      }
       break;
 
     default: break;
   }
-  if(!at_menu) render();
+  if (current_menu == MENU_PHOTOBOOK) handle_photobook();
+  //if(current_menu != MENU_NONE) render();
 }
 
 void take_photo(){
@@ -491,10 +574,10 @@ void OOM(){
 }
 
 void CameraTick(){
-  if (at_menu) return;
+  if (current_menu != MENU_NONE) return;
   if (_frame_state == FRAME_DISABLED and !global_settings.direct_write) return;
   battery_level = M5Cardputer.Power.getBatteryLevel();
-  if(at_menu) return;
+  if (current_menu != MENU_NONE) return;
   if (millis() - lastFrameTime > FRAME_TIMEOUT){
     if (!TimeoutTriggered or (millis() - camerapoll_time > camerapoll_threshold)){
       force_modeset();
@@ -507,7 +590,7 @@ void CameraTick(){
     canvas.setTextDatum(middle_center);
     canvas.setTextColor(ORANGE,BLACK);
     canvas.drawString("No video",M5.Display.width()/2,M5.Display.height()/2);
-    if (at_menu) return;
+    if (current_menu != MENU_NONE) return;
     render();
   }
 
