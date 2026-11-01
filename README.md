@@ -8,7 +8,8 @@ Features and TODO:
 - [ ] Videos
 - [ ] Gallery
 - [x] Custom effects
-- [ ] Direct Write (Double buffering)
+- [ ] Direct Write (Double buffering
+- [ ] Change to SPI protocol
 
 # Usage:
 - Get latest release source code.
